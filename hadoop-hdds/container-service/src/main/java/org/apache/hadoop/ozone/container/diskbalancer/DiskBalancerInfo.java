@@ -32,6 +32,7 @@ public class DiskBalancerInfo {
   private long bandwidthInMB;
   private int parallelThread;
   private DiskBalancerVersion version;
+  private long totalDataPendingToMove;
 
   public DiskBalancerInfo(boolean shouldRun, double threshold,
       long bandwidthInMB, int parallelThread) {
@@ -46,6 +47,17 @@ public class DiskBalancerInfo {
     this.bandwidthInMB = bandwidthInMB;
     this.parallelThread = parallelThread;
     this.version = version;
+  }
+
+  public DiskBalancerInfo(boolean shouldRun, double threshold,
+      long bandwidthInMB, int parallelThread, DiskBalancerVersion version,
+          long totalDataPendingToMove) {
+    this.shouldRun = shouldRun;
+    this.threshold = threshold;
+    this.bandwidthInMB = bandwidthInMB;
+    this.parallelThread = parallelThread;
+    this.version = version;
+    this.totalDataPendingToMove = totalDataPendingToMove;
   }
 
   public DiskBalancerInfo(boolean shouldRun,
@@ -78,6 +90,7 @@ public class DiskBalancerInfo {
         StorageContainerDatanodeProtocolProtos.DiskBalancerReportProto.newBuilder();
     builder.setIsRunning(shouldRun);
     builder.setDiskBalancerConf(confProto);
+    builder.setEstimatedTotalSizePendingToMove(totalDataPendingToMove);
     return builder.build();
   }
 

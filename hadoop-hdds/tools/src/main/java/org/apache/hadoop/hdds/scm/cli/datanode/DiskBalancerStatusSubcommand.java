@@ -17,6 +17,8 @@
 
 package org.apache.hadoop.hdds.scm.cli.datanode;
 
+import static org.apache.hadoop.hdds.scm.cli.container.upgrade.UpgradeManager.LOG;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,7 +62,7 @@ public class DiskBalancerStatusSubcommand extends ScmSubcommand {
   private String generateStatus(
       List<HddsProtos.DatanodeDiskBalancerInfoProto> protos) {
     StringBuilder formatBuilder = new StringBuilder("Status result:%n" +
-        "%-50s %s %s %s %s %s%n");
+        "%-50s %s %s %s %s %s %s%n");
 
     List<String> contentList = new ArrayList<>();
     contentList.add("Datanode");
@@ -69,9 +71,12 @@ public class DiskBalancerStatusSubcommand extends ScmSubcommand {
     contentList.add("Threshold");
     contentList.add("BandwidthInMB");
     contentList.add("ParallelThread");
+    contentList.add("EstTimeLeft(min)");
 
     for (HddsProtos.DatanodeDiskBalancerInfoProto proto: protos) {
-      formatBuilder.append("%-50s %s %s %s %s %s%n");
+      formatBuilder.append("%-50s %s %s %s %s %s %s%n");
+      double estimatedTimeLeft = calculateEstimatedTimeLeft(proto);
+
       contentList.add(proto.getNode().getHostName());
       contentList.add(String.valueOf(proto.getCurrentVolumeDensitySum()));
       contentList.add(proto.getRunningStatus().name());
@@ -81,9 +86,26 @@ public class DiskBalancerStatusSubcommand extends ScmSubcommand {
           String.valueOf(proto.getDiskBalancerConf().getDiskBandwidthInMB()));
       contentList.add(
           String.valueOf(proto.getDiskBalancerConf().getParallelThread()));
+      contentList.add(estimatedTimeLeft >= 0 ? String.format("%.2f", estimatedTimeLeft) : "N/A");
     }
 
     return String.format(formatBuilder.toString(),
         contentList.toArray(new String[0]));
+  }
+
+  private double calculateEstimatedTimeLeft(HddsProtos.DatanodeDiskBalancerInfoProto proto) {
+    LOG.info("Total data pending to move before disk" +
+        " usage becomes even {}." + "in statussubcommand",
+        proto.getEstimatedTotalSizePendingToMove());
+    long estimatedDataPendingToMove = proto.getEstimatedTotalSizePendingToMove(); // Value in bytes
+    double bandwidth = proto.getDiskBalancerConf().getDiskBandwidthInMB(); // MB/s
+
+    // Convert estimated data from bytes to MB
+    double estimatedDataPendingMB = estimatedDataPendingToMove / (1024.0 * 1024.0);
+    double estimatedTimeLeft = (bandwidth > 0) ? (estimatedDataPendingMB / bandwidth) / 60 : -1;
+    LOG.info("Estimated time for disk" +
+            " usage to become even {}." + "in statussubcommand", estimatedTimeLeft);
+    // Calculate estimated time left in minutes
+    return estimatedTimeLeft;
   }
 }

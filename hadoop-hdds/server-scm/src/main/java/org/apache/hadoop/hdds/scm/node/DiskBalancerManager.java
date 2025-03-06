@@ -60,6 +60,7 @@ public class DiskBalancerManager {
   private Map<DatanodeDetails, DiskBalancerStatus> statusMap;
   private Map<DatanodeDetails, Long> balancedBytesMap;
   private boolean useHostnames;
+  private long totalDataPendingToMove;
 
   /**
    * Constructs DiskBalancer Manager.
@@ -264,7 +265,8 @@ public class DiskBalancerManager {
         HddsProtos.DatanodeDiskBalancerInfoProto.newBuilder()
             .setNode(dn.toProto(clientVersion))
             .setCurrentVolumeDensitySum(volumeDensitySum)
-            .setRunningStatus(getRunningStatus(dn));
+            .setRunningStatus(getRunningStatus(dn))
+            .setEstimatedTotalSizePendingToMove(totalDataPendingToMove);
     if (runningStatus != HddsProtos.DiskBalancerRunningStatus.UNKNOWN) {
       builder.setDiskBalancerConf(statusMap.get(dn)
           .getDiskBalancerConfiguration().toProtobufBuilder());
@@ -333,6 +335,9 @@ public class DiskBalancerManager {
     if (reportProto.hasBalancedBytes()) {
       balancedBytesMap.put(dn, reportProto.getBalancedBytes());
     }
+    totalDataPendingToMove = reportProto.getEstimatedTotalSizePendingToMove();
+    LOG.info("Total data pending to move before disk" +
+        " usage becomes even {}." + "in processDiskBalancerReport", totalDataPendingToMove);
   }
 
   private DiskBalancerConfiguration attachDiskBalancerConf(
