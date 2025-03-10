@@ -336,8 +336,6 @@ public class DiskBalancerManager {
       balancedBytesMap.put(dn, reportProto.getBalancedBytes());
     }
     totalDataPendingToMove = reportProto.getEstimatedTotalSizePendingToMove();
-    LOG.info("Total data pending to move before disk" +
-        " usage becomes even {}." + "in processDiskBalancerReport", totalDataPendingToMove);
   }
 
   private DiskBalancerConfiguration attachDiskBalancerConf(
