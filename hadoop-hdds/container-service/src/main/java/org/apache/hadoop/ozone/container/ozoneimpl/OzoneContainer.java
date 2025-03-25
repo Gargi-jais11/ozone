@@ -277,7 +277,6 @@ public class OzoneContainer {
         new DiskBalancerService(this, diskBalancerSvcInterval.toMillis(),
             diskBalancerSvcTimeout.toMillis(), TimeUnit.MILLISECONDS, 1,
             config);
-    diskBalancerService.setReplicationSupervisor(replicationSupervisor);
 
     Duration recoveringContainerScrubbingSvcInterval =
         dnConf.getRecoveringContainerScrubInterval();
@@ -326,6 +325,7 @@ public class OzoneContainer {
 
   public void setReplicationSupervisor(ReplicationSupervisor supervisor) {
     replicationSupervisor = supervisor;
+    diskBalancerService.setReplicationSupervisor(supervisor);
   }
 
   /**
