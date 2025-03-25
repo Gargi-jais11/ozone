@@ -273,12 +273,11 @@ public class OzoneContainer {
     Duration diskBalancerSvcTimeout = conf.getObject(
         DiskBalancerConfiguration.class).getDiskBalancerTimeout();
 
-    replicationSupervisor = hddsDatanodeService.getDatanodeStateMachine().getSupervisor();
-
     diskBalancerService =
         new DiskBalancerService(this, diskBalancerSvcInterval.toMillis(),
             diskBalancerSvcTimeout.toMillis(), TimeUnit.MILLISECONDS, 1,
-            config, replicationSupervisor);
+            config);
+    diskBalancerService.setReplicationSupervisor(replicationSupervisor);
 
     Duration recoveringContainerScrubbingSvcInterval =
         dnConf.getRecoveringContainerScrubInterval();
@@ -323,6 +322,10 @@ public class OzoneContainer {
 
   public GrpcTlsConfig getTlsClientConfig() {
     return tlsClientConfig;
+  }
+
+  public void setReplicationSupervisor(ReplicationSupervisor supervisor) {
+    replicationSupervisor = supervisor;
   }
 
   /**
