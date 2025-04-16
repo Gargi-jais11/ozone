@@ -361,7 +361,15 @@ public class DiskBalancerService extends BackgroundService {
     if (queue.isEmpty()) {
       bytesToMove = 0;
       if (stopAfterDiskEven) {
+        LOG.info("Disk balancer is stopped due to disk even as" +
+            " the property StopAfterDiskEven is set to true.");
         setShouldRun(false);
+        try {
+          // Persist the updated shouldRun status into the YAML file
+          writeDiskBalancerInfoTo(getDiskBalancerInfo(), diskBalancerInfoFile);
+        } catch (IOException e) {
+          LOG.warn("Failed to persist updated DiskBalancerInfo to file.", e);
+        }
       }
       metrics.incrIdleLoopNoAvailableVolumePairCount();
     } else {
@@ -472,6 +480,7 @@ public class DiskBalancerService extends BackgroundService {
         totalBalancedBytes.addAndGet(containerSize);
       } catch (IOException e) {
         moveSucceeded = false;
+        LOG.warn("Failed to move container {}", containerData, e);
         if (diskBalancerTmpDir != null) {
           try {
             File dir = new File(String.valueOf(diskBalancerTmpDir));
@@ -487,7 +496,7 @@ public class DiskBalancerService extends BackgroundService {
             org.apache.commons.io.FileUtils.deleteDirectory(dir);
           } catch (IOException ex) {
             LOG.warn("Failed to delete dest directory {}: {}.",
-                diskBalancerDestDir, ex.getMessage(), ex);
+                diskBalancerDestDir, ex);
           }
         }
         // Only need to check for destVolume, sourceVolume's usedSpace is
