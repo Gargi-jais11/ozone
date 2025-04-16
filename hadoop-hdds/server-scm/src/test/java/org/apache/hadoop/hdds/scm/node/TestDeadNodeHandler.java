@@ -236,6 +236,15 @@ public class TestDeadNodeHandler {
     verify(deletedBlockLog, times(0))
         .onDatanodeDead(datanode1.getUuid());
 
+    // Verify DiskBalancer status is marked UNKNOWN for the dead datanode
+    assertEquals(HddsProtos.DiskBalancerRunningStatus.UNKNOWN,
+        diskBalancerManager.getStatus(datanode1).getRunningStatus());
+    // Verify DiskBalancer status remains unchanged for other datanodes
+    assertEquals(HddsProtos.DiskBalancerRunningStatus.RUNNING,
+        diskBalancerManager.getStatus(datanode2).getRunningStatus());
+    assertEquals(HddsProtos.DiskBalancerRunningStatus.RUNNING,
+        diskBalancerManager.getStatus(datanode3).getRunningStatus());
+
     Set<ContainerReplica> container1Replicas = containerManager
         .getContainerReplicas(ContainerID.valueOf(container1.getContainerID()));
     assertEquals(2, container1Replicas.size());
