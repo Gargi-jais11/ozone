@@ -115,7 +115,8 @@ public class TestDeadNodeHandler {
         mockRatisProvider);
     containerManager = scm.getContainerManager();
     deletedBlockLog = mock(DeletedBlockLog.class);
-    diskBalancerManager = mock(DiskBalancerManager.class);
+    diskBalancerManager = new DiskBalancerManager(conf, new EventQueue(),
+        SCMContext.emptyContext(), null);
     deadNodeHandler = new DeadNodeHandler(nodeManager,
         mock(PipelineManager.class), containerManager, diskBalancerManager, deletedBlockLog);
     healthyReadOnlyNodeHandler =

@@ -132,8 +132,10 @@ public class DeadNodeHandler implements EventHandler<DatanodeDetails> {
       }
 
       // Mark DiskBalancer status as UNKNOWN for the dead datanode
-      LOG.info("Marking DiskBalancer status UNKNOWN for dead DN {}", datanodeDetails.getUuidString());
-      diskBalancerManager.markStatusUnknown(datanodeDetails);
+      if (diskBalancerManager != null) {
+        LOG.info("Marking DiskBalancer status UNKNOWN for dead DN {}", datanodeDetails.getUuidString());
+        diskBalancerManager.markStatusUnknown(datanodeDetails);
+      }
     } catch (NodeNotFoundException ex) {
       // This should not happen, we cannot get a dead node event for an
       // unregistered datanode!
