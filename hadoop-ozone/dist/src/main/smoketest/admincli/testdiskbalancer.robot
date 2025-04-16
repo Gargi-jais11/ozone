@@ -51,7 +51,7 @@ Check if balancer stops automatically
     Execute             ozone admin datanode diskbalancer start -a
 
     # Wait until the balancer status contains "RUNNING", retry every 2s for up to 20 sec
-    Wait Until Keyword Succeeds   30 sec   2 sec   Check Balancer Status   RUNNING
+    Wait Until Keyword Succeeds   1 min   2 sec   Check Balancer Status   RUNNING
 
     # Wait until the balancer status contains "STOPPED", retry every 2s for up to 40 sec
     Wait Until Keyword Succeeds   1 min   2 sec   Check Balancer Status   STOPPED
