@@ -48,10 +48,7 @@ Check success with non-admin user for status and report diskbalancer
 
 Check if balancer stops automatically
     Run Keyword         Kinit test user                 testuser               testuser.keytab
-    Execute             ozone admin datanode diskbalancer start -a
-
-    # Wait until the balancer status contains "RUNNING", retry every 5s for up to 20 sec
-    Wait Until Keyword Succeeds   1 min   5 sec   Check Balancer Status   RUNNING
-
-    # Wait until the balancer status contains "STOPPED", retry every 5s for up to 40 sec
-    Wait Until Keyword Succeeds   2 min   5 sec   Check Balancer Status   STOPPED
+    Execute             ozone admin datanode diskbalancer start -t 0.002 -a
+    ${result} =         Execute                         ozone admin datanode diskbalancer status
+                        Should Contain                  ${result}                STOPPED
+                        Should Contain                  ${result}                0.002
