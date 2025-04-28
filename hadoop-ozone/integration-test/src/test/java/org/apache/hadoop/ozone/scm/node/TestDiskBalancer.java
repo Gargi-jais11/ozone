@@ -93,11 +93,13 @@ public class TestDiskBalancer {
   @Test
   public void testDiskBalancerStopAfterEven() throws IOException,
       InterruptedException, TimeoutException {
-    String datanodeHostName1 = cluster.getStorageContainerManager()
+    DatanodeDetails datanodeDetails = cluster.getStorageContainerManager()
         .getScmNodeManager()
         .getAllNodes()
-        .get(0)
-        .getHostName();
+        .get(0);
+
+    String datanodeHostNameWithPort = datanodeDetails.getHostName() + ":" +
+        datanodeDetails.getPort(DatanodeDetails.Port.Name.STANDALONE).getValue();
 
     // Start the DiskBalancer with specific parameters
     diskBalancerManager.startDiskBalancer(
@@ -105,17 +107,17 @@ public class TestDiskBalancer {
         Optional.of(10L),  // bandwidth in MB
         Optional.of(5),    // parallel threads
         Optional.of(true), // stopAfterDiskEven
-        Optional.of(Collections.singletonList(datanodeHostName1))//apply to one datanode
+        Optional.of(Collections.singletonList(datanodeHostNameWithPort)) // apply to one datanode
     );
 
     // Wait until the DiskBalancer status becomes RUNNING for that datanode
     GenericTestUtils.waitFor(() -> {
       try {
         List<HddsProtos.DatanodeDiskBalancerInfoProto> statusList =
-            storageClient.getDiskBalancerStatus(Optional.of(Collections.singletonList(datanodeHostName1)),
+            storageClient.getDiskBalancerStatus(Optional.of(Collections.singletonList(datanodeHostNameWithPort)),
                 Optional.empty());
 
-        return statusList.size() == 1 && statusList.get(0).getNode().getHostName().equals(datanodeHostName1) &&
+        return statusList.size() == 1 && statusList.get(0).getNode().getHostName().equals(datanodeDetails.getHostName()) &&
             statusList.get(0).getRunningStatus() == HddsProtos.DiskBalancerRunningStatus.RUNNING;
       } catch (IOException e) {
         return false;
@@ -126,10 +128,10 @@ public class TestDiskBalancer {
     GenericTestUtils.waitFor(() -> {
       try {
         List<HddsProtos.DatanodeDiskBalancerInfoProto> statusList =
-            storageClient.getDiskBalancerStatus(Optional.of(Collections.singletonList(datanodeHostName1)),
+            storageClient.getDiskBalancerStatus(Optional.of(Collections.singletonList(datanodeHostNameWithPort)),
                 Optional.empty());
 
-        return statusList.size() == 1 && statusList.get(0).getNode().getHostName().equals(datanodeHostName1) &&
+        return statusList.size() == 1 && statusList.get(0).getNode().getHostName().equals(datanodeDetails.getHostName()) &&
             statusList.get(0).getRunningStatus() == HddsProtos.DiskBalancerRunningStatus.STOPPED;
       } catch (IOException e) {
         return false;
@@ -142,3 +144,4 @@ public class TestDiskBalancer {
     // TODO: Test status command with datanodes in balancing
   }
 }
+
