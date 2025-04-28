@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeoutException;
@@ -99,8 +98,7 @@ public class TestDiskBalancer {
         Optional.of(10L),  // bandwidth in MB
         Optional.of(5),    // parallel threads
         Optional.of(true), // stopAfterDiskEven
-        Optional.empty()   // apply to all datanodes
-    );
+        Optional.empty());   // apply to all datanodes
 
     // Wait until all datanodes report DiskBalancer status as RUNNING
     GenericTestUtils.waitFor(() -> {
