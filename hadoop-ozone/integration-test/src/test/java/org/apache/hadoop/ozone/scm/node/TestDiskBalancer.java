@@ -117,7 +117,8 @@ public class TestDiskBalancer {
             storageClient.getDiskBalancerStatus(Optional.of(Collections.singletonList(datanodeHostNameWithPort)),
                 Optional.empty());
 
-        return statusList.size() == 1 && statusList.get(0).getNode().getHostName().equals(datanodeDetails.getHostName()) &&
+        return statusList.size() == 1 && statusList.get(0).getNode().getHostName().
+            equals(datanodeDetails.getHostName()) &&
             statusList.get(0).getRunningStatus() == HddsProtos.DiskBalancerRunningStatus.RUNNING;
       } catch (IOException e) {
         return false;
@@ -131,7 +132,8 @@ public class TestDiskBalancer {
             storageClient.getDiskBalancerStatus(Optional.of(Collections.singletonList(datanodeHostNameWithPort)),
                 Optional.empty());
 
-        return statusList.size() == 1 && statusList.get(0).getNode().getHostName().equals(datanodeDetails.getHostName()) &&
+        return statusList.size() == 1 && statusList.get(0).getNode().getHostName()
+            .equals(datanodeDetails.getHostName()) &&
             statusList.get(0).getRunningStatus() == HddsProtos.DiskBalancerRunningStatus.STOPPED;
       } catch (IOException e) {
         return false;
