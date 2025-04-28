@@ -115,11 +115,18 @@ public class TestDiskBalancer {
       }
     }, 5000, 60000); // poll every 5s, timeout after 60s
 
-    // Verify all datanodes are in RUNNING state
-    List<HddsProtos.DatanodeDiskBalancerInfoProto> statusList =
-        storageClient.getDiskBalancerStatus(Optional.empty(), Optional.empty());
-    assertTrue(statusList.stream().allMatch(status ->
-        status.getRunningStatus() == HddsProtos.DiskBalancerRunningStatus.RUNNING));
+    // Wait until all datanodes report DiskBalancer status as STOPPED
+    GenericTestUtils.waitFor(() -> {
+      try {
+        List<HddsProtos.DatanodeDiskBalancerInfoProto> statusList =
+            storageClient.getDiskBalancerStatus(Optional.empty(), Optional.empty());
+
+        return statusList.stream().allMatch(status ->
+            status.getRunningStatus() == HddsProtos.DiskBalancerRunningStatus.STOPPED);
+      } catch (IOException e) {
+        return false;
+      }
+    }, 5000, 60000); // poll every 5s, timeout after 60s
   }
 
   @Test
