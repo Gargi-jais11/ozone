@@ -111,7 +111,7 @@ public class TestDiskBalancer {
       } catch (IOException e) {
         return false;
       }
-    }, 5000, 60000); // poll every 5s, timeout after 60s
+    }, 1000, 20000); // poll every 5s, timeout after 60s
 
     // Wait until all datanodes report DiskBalancer status as STOPPED
     GenericTestUtils.waitFor(() -> {
@@ -124,7 +124,7 @@ public class TestDiskBalancer {
       } catch (IOException e) {
         return false;
       }
-    }, 5000, 60000); // poll every 5s, timeout after 60s
+    }, 1000, 20000); // poll every 5s, timeout after 60s
   }
 
   @Test
