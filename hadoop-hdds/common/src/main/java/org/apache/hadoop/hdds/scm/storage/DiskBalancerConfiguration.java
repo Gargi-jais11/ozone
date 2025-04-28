@@ -153,7 +153,7 @@ public final class DiskBalancerConfiguration {
       description = "If true, the DiskBalancer will automatically stop once disks are balanced.")
   private boolean stopAfterDiskEven = true;
 
-  public boolean getStopAfterDiskEven() {
+  public boolean isStopAfterDiskEven() {
     return stopAfterDiskEven;
   }
 
