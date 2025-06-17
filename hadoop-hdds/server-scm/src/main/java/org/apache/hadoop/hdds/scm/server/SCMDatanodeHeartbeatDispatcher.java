@@ -32,8 +32,8 @@ import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
+import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.CommandQueueReportProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.CommandStatusReportsProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ContainerActionsProto;
@@ -92,8 +92,8 @@ public final class SCMDatanodeHeartbeatDispatcher {
     if (!nodeManager.isNodeRegistered(datanodeDetails)) {
       LOG.info("SCM received heartbeat from an unregistered datanode {}. " +
           "Asking datanode to re-register.", datanodeDetails);
-      UUID dnID = datanodeDetails.getUuid();
-      nodeManager.addDatanodeCommand(dnID, new ReregisterCommand());
+      DatanodeID dnID = datanodeDetails.getID();
+      nodeManager.addDatanodeCommand(datanodeDetails.getID(), new ReregisterCommand());
 
       commands = nodeManager.getCommandQueue(dnID);
 
@@ -198,9 +198,7 @@ public final class SCMDatanodeHeartbeatDispatcher {
                 heartbeat.getDiskBalancerReport()));
       }
     }
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Heartbeat dispatched: datanode=" + datanodeDetails.getUuid() + ", Commands= " + commands);
-    }
+    LOG.debug("Heartbeat dispatched for datanode {} with commands {}", datanodeDetails, commands);
 
     return commands;
   }
@@ -331,7 +329,7 @@ public final class SCMDatanodeHeartbeatDispatcher {
 
     @Override
     public int hashCode() {
-      return this.getDatanodeDetails().getUuid().hashCode();
+      return this.getDatanodeDetails().getID().hashCode();
     }
     
     @Override
@@ -379,7 +377,7 @@ public final class SCMDatanodeHeartbeatDispatcher {
 
     @Override
     public int hashCode() {
-      return this.getDatanodeDetails().getUuid().hashCode();
+      return this.getDatanodeDetails().getID().hashCode();
     }
 
     @Override
