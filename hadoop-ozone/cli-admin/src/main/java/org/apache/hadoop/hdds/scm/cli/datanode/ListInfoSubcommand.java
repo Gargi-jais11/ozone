@@ -170,7 +170,7 @@ public class ListInfoSubcommand extends ScmSubcommand {
           .filter(Objects::nonNull)
           .collect(Collectors.toList());
     }
-    
+
     List<HddsProtos.Node> nodes = scmClient.queryNode(null,
         null, HddsProtos.QueryScope.CLUSTER, "");
 

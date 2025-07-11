@@ -289,7 +289,7 @@ public class TestListInfoSubcommand {
   })
   public void testNodeSelectionAndUsageSortingAreMutuallyExclusive(String sortingFlag, String selectionFlag) {
     CommandLine c = new CommandLine(cmd);
-    
+
     List<HddsProtos.Node> nodes = getNodeDetails();
     String nodeSelectionValue;
     if ("--node-id".equals(selectionFlag)) {
@@ -298,15 +298,15 @@ public class TestListInfoSubcommand {
       nodeSelectionValue = "192.168.1.100";
     } else {
       nodeSelectionValue = "host-one";
-    } 
-    
+    }
+
     CommandLine.MutuallyExclusiveArgsException thrown = assertThrows(
         CommandLine.MutuallyExclusiveArgsException.class,
         () -> c.parseArgs(sortingFlag, selectionFlag, nodeSelectionValue),
         () -> String.format("Expected MutuallyExclusiveArgsException when combining %s and %s",
             sortingFlag, selectionFlag)
     );
-    
+
     String expectedErrorMessagePart = "mutually exclusive";
     assertTrue(thrown.getMessage().contains(expectedErrorMessagePart),
         "Exception message should contain '" + expectedErrorMessagePart + "' but was: " + thrown.getMessage());
