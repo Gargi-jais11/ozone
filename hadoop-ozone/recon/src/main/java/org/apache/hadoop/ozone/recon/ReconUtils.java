@@ -112,7 +112,7 @@ public class ReconUtils {
   /**
    * Get the current rebuild state of NSSummary tree.
    * Delegates to NSSummaryTask's unified control mechanism.
-   * 
+   *
    * @return current RebuildState from NSSummaryTask
    */
   public static org.apache.hadoop.ozone.recon.tasks.NSSummaryTask.RebuildState getNSSummaryRebuildState() {
@@ -122,7 +122,7 @@ public class ReconUtils {
   /**
    * Convenience method to trigger asynchronous NSSummary tree rebuild.
    * Uses the unified control mechanism in NSSummaryTask.
-   * 
+   *
    * @param reconNamespaceSummaryManager The namespace summary manager
    * @param omMetadataManager The OM metadata manager
    * @return true if rebuild was triggered successfully, false otherwise
@@ -130,7 +130,7 @@ public class ReconUtils {
   public static boolean triggerAsyncNSSummaryRebuild(
       ReconNamespaceSummaryManager reconNamespaceSummaryManager,
       ReconOMMetadataManager omMetadataManager) {
-    
+
     // Submit rebuild task to single thread executor for async execution
     NSSUMMARY_REBUILD_EXECUTOR.submit(() -> {
       try {
@@ -141,7 +141,7 @@ public class ReconUtils {
         log.error("Async NSSummary tree rebuild failed.", e);
       }
     });
-    
+
     log.info("Async NSSummary tree rebuild triggered successfully.");
     return true;
   }
