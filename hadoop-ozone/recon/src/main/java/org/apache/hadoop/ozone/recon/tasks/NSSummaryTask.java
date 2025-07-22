@@ -119,7 +119,7 @@ public class NSSummaryTask implements ReconOmTask {
 
   /**
    * Get the current rebuild state of NSSummary tree.
-   * 
+   *
    * @return current RebuildState
    */
   public static RebuildState getRebuildState() {
@@ -194,7 +194,7 @@ public class NSSummaryTask implements ReconOmTask {
       LOG.info("NSSummary tree rebuild is already in progress, skipping duplicate request.");
       return buildTaskResult(false);
     }
-    
+
     if (!REBUILD_STATE.compareAndSet(currentState, RebuildState.RUNNING)) {
       LOG.info("Failed to acquire rebuild lock, another thread may have started rebuild.");
       return buildTaskResult(false);
@@ -202,7 +202,7 @@ public class NSSummaryTask implements ReconOmTask {
 
     LOG.info("Starting NSSummary tree reprocess with unified control...");
     long startTime = System.nanoTime(); // Record start time
-    
+
     try {
       return executeReprocess(omMetadataManager, startTime);
     } catch (Exception e) {
@@ -252,12 +252,12 @@ public class NSSummaryTask implements ReconOmTask {
         }
       }
       success = true;
-      
+
     } catch (InterruptedException | ExecutionException ex) {
       LOG.error("Error while reprocessing NSSummary table in Recon DB.", ex);
       REBUILD_STATE.set(RebuildState.FAILED);
       return buildTaskResult(false);
-      
+
     } finally {
       executorService.shutdown();
 
@@ -268,7 +268,7 @@ public class NSSummaryTask implements ReconOmTask {
 
       // Log performance metrics
       LOG.info("NSSummary reprocess execution time: {} milliseconds", durationInMillis);
-      
+
       // Reset state to IDLE on successful completion
       if (success) {
         REBUILD_STATE.set(RebuildState.IDLE);
