@@ -1482,7 +1482,8 @@ public class KeyValueHandler extends Handler {
         LOG.warn(message);
         ContainerLogger.logChecksumUpdated(containerData, originalDataChecksum);
       } else {
-        // If this is the first time the checksum is being generated, don't log a warning about updating the checksum.
+        // If this is the first time the scanner has run with the feature to generate a checksum file, don't
+        // log a warning for the checksum update.
         LOG.debug(message);
       }
     }
