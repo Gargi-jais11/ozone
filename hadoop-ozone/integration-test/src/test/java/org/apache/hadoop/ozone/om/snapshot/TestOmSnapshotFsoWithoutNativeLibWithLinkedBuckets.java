@@ -17,6 +17,8 @@
 
 package org.apache.hadoop.ozone.om.snapshot;
 
+import org.apache.ozone.test.tag.Unhealthy;
+
 import static org.apache.hadoop.ozone.om.helpers.BucketLayout.FILE_SYSTEM_OPTIMIZED;
 
 import org.apache.ozone.test.tag.Unhealthy;
