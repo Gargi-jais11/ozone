@@ -17,8 +17,6 @@
 
 package org.apache.hadoop.ozone.om.snapshot;
 
-import org.apache.ozone.test.tag.Unhealthy;
-
 import static org.apache.hadoop.ozone.om.helpers.BucketLayout.LEGACY;
 
 import org.apache.ozone.test.tag.Unhealthy;
