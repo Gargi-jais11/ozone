@@ -258,8 +258,8 @@ public class TestContainerCommandReconciliation {
   }
 
   /**
-   * Tests reading the container checksum info file from a datanode where there's an IO error 
-   * that's not related to file not found (e.g., permission error). Such errors should not 
+   * Tests reading the container checksum info file from a datanode where there's an IO error
+   * that's not related to file not found (e.g., permission error). Such errors should not
    * trigger fallback to building from metadata.
    */
   @Test
