@@ -217,7 +217,7 @@ public abstract class TestOzoneDebugShell implements NonHATests.TestCase {
       ObjectMapper objectMapper = new ObjectMapper();
       // Parse the JSON array string into a JsonNode
       JsonNode jsonNode = objectMapper.readTree(output);
-      JsonNode keyLocations = jsonNode.get("keyLocations").get(0);
+      JsonNode keyLocations = jsonNode.get("keyLocations");
       for (JsonNode element : keyLocations) {
         String fileName =
             element.get("file").toString();

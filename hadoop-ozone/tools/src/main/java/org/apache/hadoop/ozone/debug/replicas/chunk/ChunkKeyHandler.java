@@ -70,12 +70,6 @@ public class ChunkKeyHandler extends KeyHandler {
       String volumeName = address.getVolumeName();
       String bucketName = address.getBucketName();
       String keyName = address.getKeyName();
-
-      // Print the file header immediately
-      ObjectNode headerResult = JsonUtils.createObjectNode(null);
-      headerResult.put("volumeName", volumeName);
-      headerResult.put("bucketName", bucketName);
-      headerResult.put("name", keyName);
       
       OmKeyArgs keyArgs = new OmKeyArgs.Builder().setVolumeName(volumeName)
           .setBucketName(bucketName).setKeyName(keyName).build();
@@ -100,10 +94,10 @@ public class ChunkKeyHandler extends KeyHandler {
       
       // Print opening JSON structure
       System.out.println("{");
-      System.out.printf("  \"volumeName\": \"%s\",%n", volumeName);
-      System.out.printf("  \"bucketName\": \"%s\",%n", bucketName);
-      System.out.printf("  \"name\": \"%s\",%n", keyName);
-      System.out.println("  \"keyLocations\": [");
+      System.out.printf("  \"volumeName\" : \"%s\",%n", volumeName);
+      System.out.printf("  \"bucketName\" : \"%s\",%n", bucketName);
+      System.out.printf("  \"name\" : \"%s\",%n", keyName);
+      System.out.println("  \"keyLocations\" : [");
       
       boolean isFirstBlock = true;
       
@@ -216,10 +210,9 @@ public class ChunkKeyHandler extends KeyHandler {
           
           // Print this block's data immediately, with proper indentation
           String blockJson = JsonUtils.toJsonStringWithDefaultPrettyPrinter(blockResponseArray);
-          // Remove the outer array brackets and indent properly
           String[] lines = blockJson.split("\n");
-          for (int i = 1; i < lines.length - 1; i++) {
-            System.out.println("    " + lines[i]);
+          for (String line : lines) {
+            System.out.println("  " + line);
           }
           
         } catch (InterruptedException e) {
@@ -230,7 +223,6 @@ public class ChunkKeyHandler extends KeyHandler {
       }
       
       // Close the JSON structure
-      System.out.println();
       System.out.println("  ]");
       System.out.println("}");
     }
