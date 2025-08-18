@@ -1591,7 +1591,7 @@ public class KeyValueHandler extends Handler {
   public void copyContainer(final Container container, Path destinationPath)
       throws IOException {
     final KeyValueContainer kvc = (KeyValueContainer) container;
-    kvc.copyContainerData(destinationPath);
+    kvc.copyContainerDirectory(destinationPath);
   }
 
   private KeyValueContainer createNewContainer(
