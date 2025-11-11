@@ -472,7 +472,7 @@ public final class OzoneManagerRatisUtils {
     String storageDir = conf.get(OMConfigKeys.OZONE_OM_RATIS_STORAGE_DIR);
 
     if (Strings.isNullOrEmpty(storageDir)) {
-      storageDir = ServerUtils.getDefaultRatisDirectory(conf);
+      storageDir = ServerUtils.getDefaultRatisDirectory(conf, "om");
     }
     return storageDir;
   }
@@ -483,11 +483,11 @@ public final class OzoneManagerRatisUtils {
   public static String getOMRatisSnapshotDirectory(ConfigurationSource conf) {
     String snapshotDir = conf.get(OZONE_OM_RATIS_SNAPSHOT_DIR);
 
-    // If ratis snapshot directory is not set, fall back to ozone.metadata.dir.
+    // If ratis snapshot directory is not set, fall back to ozone.metadata.dir/om.
     if (Strings.isNullOrEmpty(snapshotDir)) {
       LOG.warn("{} is not configured. Falling back to {} config",
           OZONE_OM_RATIS_SNAPSHOT_DIR, OZONE_METADATA_DIRS);
-      File metaDirPath = ServerUtils.getOzoneMetaDirPath(conf);
+      File metaDirPath = ServerUtils.getOzoneMetaDirPath(conf, "om");
       snapshotDir = Paths.get(metaDirPath.getPath(),
           OZONE_RATIS_SNAPSHOT_DIR).toString();
     }

@@ -422,7 +422,7 @@ public final class HddsServerUtil {
 
     if (rawLocations.isEmpty()) {
       rawLocations = new ArrayList<>(1);
-      rawLocations.add(ServerUtils.getDefaultRatisDirectory(conf));
+      rawLocations.add(ServerUtils.getDefaultRatisDirectory(conf, "datanode"));
     }
     return rawLocations;
   }
@@ -456,7 +456,7 @@ public final class HddsServerUtil {
     String dataNodeIDDirPath =
         conf.getTrimmed(ScmConfigKeys.OZONE_SCM_DATANODE_ID_DIR);
     if (Strings.isNullOrEmpty(dataNodeIDDirPath)) {
-      File metaDirPath = ServerUtils.getOzoneMetaDirPath(conf);
+      File metaDirPath = ServerUtils.getOzoneMetaDirPath(conf, "datanode");
       if (metaDirPath == null) {
         // this means meta data is not found, in theory should not happen at
         // this point because should've failed earlier.

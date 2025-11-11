@@ -48,9 +48,11 @@ public class TestDataNodeStartupSlvLessThanMlv {
   @Test
   public void testStartupSlvLessThanMlv() throws Exception {
     // Add subdirectories under the temporary folder where the version file
-    // will be placed.
+    // will be placed. With component-specific directories, create datanode subdir first.
+    File datanodeComponentDir = Files.createDirectory(
+        tempFolder.resolve("datanode")).toFile();
     File datanodeSubdir = Files.createDirectory(
-        tempFolder.resolve(DATANODE_LAYOUT_VERSION_DIR)).toFile();
+        datanodeComponentDir.toPath().resolve(DATANODE_LAYOUT_VERSION_DIR)).toFile();
 
     OzoneConfiguration conf = new OzoneConfiguration();
     conf.set(HddsConfigKeys.OZONE_METADATA_DIRS, tempFolder.toString());

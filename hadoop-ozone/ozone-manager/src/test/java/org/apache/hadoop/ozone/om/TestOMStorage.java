@@ -60,7 +60,7 @@ import org.junit.jupiter.api.io.TempDir;
  *   4. Configuration parsing:
  *     4.1. getOmDbDir returns the configured
  *         {@link OMConfigKeys#OZONE_OM_DB_DIRS} value
- *     4.2. getOmDbDir falls back to {@link HddsConfigKeys#OZONE_METADATA_DIRS}
+ *     4.2. getOmDbDir falls back to {@link HddsConfigKeys#OZONE_METADATA_DIRS/om}
  *         when {@link OMConfigKeys#OZONE_OM_DB_DIRS} is not set
  *     4.3. getOmDbDir throws exception if none of the above properties are set
  *   5. the protected getNodeProperties method properly returns all the keys
@@ -89,9 +89,10 @@ public class TestOMStorage {
   public void testGetOmDbDirWithFallback() throws Exception {
     File metaDir = tmpFolder.toFile();
     OzoneConfiguration conf = confWithHDDSMetadataDir(metaDir);
+    File omMetaDir = new File(metaDir, "om");
 
-    assertEquals(metaDir, OMStorage.getOmDbDir(conf));
-    assertTrue(metaDir.exists());
+    assertEquals(omMetaDir, OMStorage.getOmDbDir(conf));
+    assertTrue(omMetaDir.exists());
   }
 
   @Test

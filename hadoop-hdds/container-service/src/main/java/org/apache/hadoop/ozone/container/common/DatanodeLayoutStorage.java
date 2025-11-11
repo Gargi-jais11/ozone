@@ -42,20 +42,20 @@ public class DatanodeLayoutStorage extends Storage {
    */
   public DatanodeLayoutStorage(ConfigurationSource conf, String dataNodeId)
       throws IOException {
-    super(NodeType.DATANODE, ServerUtils.getOzoneMetaDirPath(conf),
+    super(NodeType.DATANODE, ServerUtils.getOzoneMetaDirPath(conf, "datanode"),
         DATANODE_LAYOUT_VERSION_DIR, dataNodeId, getDefaultLayoutVersion(conf));
   }
 
   public DatanodeLayoutStorage(OzoneConfiguration conf, String dataNodeId,
                                int layoutVersion)
       throws IOException {
-    super(NodeType.DATANODE, ServerUtils.getOzoneMetaDirPath(conf),
+    super(NodeType.DATANODE, ServerUtils.getOzoneMetaDirPath(conf, "datanode"),
         DATANODE_LAYOUT_VERSION_DIR, dataNodeId, layoutVersion);
   }
 
   public DatanodeLayoutStorage(ConfigurationSource conf)
       throws IOException {
-    super(NodeType.DATANODE, ServerUtils.getOzoneMetaDirPath(conf),
+    super(NodeType.DATANODE, ServerUtils.getOzoneMetaDirPath(conf, "datanode"),
         DATANODE_LAYOUT_VERSION_DIR, getDefaultLayoutVersion(conf));
   }
 

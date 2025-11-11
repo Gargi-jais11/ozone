@@ -21,7 +21,7 @@ Resource            ../commonlib.robot
 Test Timeout        10 minutes
 
 *** Variables ***
-${OM_DB_PATH}       /data/metadata/om.db
+${OM_DB_PATH}       /data/metadata/om/om.db
 
 *** Keywords ***
 Delete Test Keys

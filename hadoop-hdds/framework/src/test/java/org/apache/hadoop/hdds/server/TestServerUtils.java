@@ -19,6 +19,7 @@ package org.apache.hadoop.hdds.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -211,7 +212,7 @@ public class TestServerUtils {
   }
 
   /**
-   * Test {@link ServerUtils#getScmDbDir} with fallback to OZONE_METADATA_DIRS
+   * Test {@link ServerUtils#getScmDbDir} with fallback to OZONE_METADATA_DIRS/scm
    * when OZONE_SCM_DB_DIRS is undefined.
    */
   @Test
@@ -219,9 +220,13 @@ public class TestServerUtils {
     final File metaDir = new File(folder.toFile(), "metaDir");
     final OzoneConfiguration conf = new OzoneConfiguration();
     conf.set(HddsConfigKeys.OZONE_METADATA_DIRS, metaDir.getPath());
+
+    // Should return metaDir/scm, not just metaDir
+    File expectedScmDir = new File(metaDir, "scm");
     try {
       assertFalse(metaDir.exists());
-      assertEquals(metaDir, ServerUtils.getScmDbDir(conf));
+      assertEquals(expectedScmDir, ServerUtils.getScmDbDir(conf));
+      assertTrue(expectedScmDir.exists());
       assertTrue(metaDir.exists());
     } finally {
       FileUtils.deleteQuietly(metaDir);
@@ -263,4 +268,44 @@ public class TestServerUtils {
         () -> ServerUtils.getOzoneMetaDirPath(conf));
   }
 
+  /**
+   * Test that SCM, OM, and Datanode colocated on the same host with only
+   * ozone.metadata.dirs configured don't conflict with each other.
+   */
+  @Test
+  public void testColocatedComponentsWithSharedMetadataDir() {
+    final File metaDir = new File(folder.toFile(), "sharedMetaDir");
+    final OzoneConfiguration conf = new OzoneConfiguration();
+
+    // Only configure ozone.metadata.dirs (the fallback config)
+    conf.set(HddsConfigKeys.OZONE_METADATA_DIRS, metaDir.getPath());
+
+    try {
+      assertFalse(metaDir.exists());
+
+      // Test component-specific directory creation
+      File scmDir = ServerUtils.getOzoneMetaDirPath(conf, "scm");
+      File omDir = ServerUtils.getOzoneMetaDirPath(conf, "om");
+      File datanodeDir = ServerUtils.getOzoneMetaDirPath(conf, "datanode");
+
+      // Verify all component directories are created
+      assertTrue(metaDir.exists());
+      assertTrue(scmDir.exists());
+      assertTrue(omDir.exists());
+      assertTrue(datanodeDir.exists());
+
+      // Verify scm, om and dn directories are different when colocated
+      assertNotEquals(scmDir, omDir);
+      assertNotEquals(scmDir, datanodeDir);
+      assertNotEquals(omDir, datanodeDir);
+
+      // Verify correct path structure
+      assertEquals(new File(metaDir, "scm"), scmDir);
+      assertEquals(new File(metaDir, "om"), omDir);
+      assertEquals(new File(metaDir, "datanode"), datanodeDir);
+
+    } finally {
+      FileUtils.deleteQuietly(metaDir);
+    }
+  }
 }

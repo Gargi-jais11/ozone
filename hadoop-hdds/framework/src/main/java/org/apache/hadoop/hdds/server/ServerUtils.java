@@ -32,6 +32,7 @@ import org.apache.hadoop.hdds.scm.ScmConfigKeys;
 import org.apache.hadoop.ipc.RPC;
 import org.apache.hadoop.ipc.Server;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
+import org.apache.hadoop.ozone.common.Storage;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -123,10 +124,10 @@ public final class ServerUtils {
 
   /**
    * Get the location where SCM should store its metadata directories.
-   * Fall back to OZONE_METADATA_DIRS if not defined.
+   * Fall back to OZONE_METADATA_DIRS/scm if not defined.
    *
    * @param conf
-   * @return File
+   * @return File object pointing to the SCM database directory
    */
   public static File getScmDbDir(ConfigurationSource conf) {
     File metadataDir = getDirectoryFromConfig(conf,
@@ -138,7 +139,7 @@ public final class ServerUtils {
     LOG.warn("{} is not configured. We recommend adding this setting. " +
         "Falling back to {} instead.",
         ScmConfigKeys.OZONE_SCM_DB_DIRS, HddsConfigKeys.OZONE_METADATA_DIRS);
-    return getOzoneMetaDirPath(conf);
+    return getOzoneMetaDirPath(conf, "scm");
   }
 
   /**
@@ -268,6 +269,130 @@ public final class ServerUtils {
     return dirPath;
   }
 
+  /**
+   * Returns the metadata directory path for a specific component with component-specific subdirectory.
+   *
+   * <p>This method creates isolated subdirectories for each Ozone component (SCM, OM, Datanode) under
+   * the base {@code ozone.metadata.dirs} path. This isolation prevents file lock conflicts when
+   * multiple components are colocated on the same host and share the same base metadata directory.
+   *
+   * <p><b>Directory Structure:</b>
+   * <ul>
+   *   <li>New installations: {@code {ozone.metadata.dirs}/{component}/}
+   *       (e.g., {@code /data/metadata/scm/})</li>
+   *   <li>Upgraded installations: {@code {ozone.metadata.dirs}/}
+   *       (e.g., {@code /data/metadata/} - for backward compatibility)</li>
+   * </ul>
+   *
+   * <p><b>Backward Compatibility:</b>
+   * Prior to this change, all components stored their data directly in the base metadata directory,
+   * which caused {@code OverlappingFileLockException} when multiple components were colocated.
+   * To support seamless upgrades from older Ozone versions (like 2.0.0), this method detects if
+   * component data already exists in the old location and continues using it. This avoids requiring
+   * manual data migration during upgrades.
+   *
+   * <p><b>Examples:</b>
+   * <pre>
+   * // Scenario 1: Upgrade from Ozone 2.0.0 with SCM data at /data/metadata/scm.db
+   * getOzoneMetaDirPath(conf, "scm") → /data/metadata/  (backward compatible)
+   *
+   * // Scenario 2: Fresh installation with no existing data
+   * getOzoneMetaDirPath(conf, "scm") → /data/metadata/scm/  (new structure)
+   *
+   * // Scenario 3: Already migrated with data at /data/metadata/scm/scm.db
+   * getOzoneMetaDirPath(conf, "scm") → /data/metadata/scm/  (new structure)
+   * </pre>
+   *
+   * @param conf Configuration source
+   * @param component Component name (e.g., "scm", "om", "datanode")
+   * @return Directory path for the component's metadata
+   * @throws IllegalArgumentException if unable to create the component directory
+   * @see #hasComponentData(File, String)
+   */
+  public static File getOzoneMetaDirPath(ConfigurationSource conf, String component) {
+    // Get the base metadata directory from ozone.metadata.dirs configuration
+    File baseDir = getOzoneMetaDirPath(conf);
+
+    // Construct the new component-specific subdirectory path
+    // e.g., /data/metadata/scm/ for SCM component
+    File componentDir = new File(baseDir, component);
+
+    // STEP 1: Check if component data exists in the NEW location (component subdirectory)
+    if (hasComponentData(componentDir, component)) {
+      return componentDir;
+    }
+
+    // STEP 2: Check if component data exists in the OLD location (base directory)
+    // This is the BACKWARD COMPATIBILITY path for upgrades from older Ozone versions.
+    // In older versions (e.g., 2.0.0), all components stored data directly in the base
+    // directory without component-specific subdirectories. For example:
+    // - SCM stored data at /data/metadata/scm.db
+    // - OM stored data at /data/metadata/om.db
+    //
+    // If we find existing data in the old location, we continue using the base directory
+    // to avoid breaking existing installations and requiring manual data migration.
+    if (hasComponentData(baseDir, component)) {
+      return baseDir;
+    }
+
+    // STEP 3: No existing data found - this is a NEW installation
+    // Create the component-specific subdirectory for isolation.
+    if (!componentDir.mkdirs() && !componentDir.exists()) {
+      throw new IllegalArgumentException("Unable to create directory " +
+          componentDir + " under " + HddsConfigKeys.OZONE_METADATA_DIRS);
+    }
+
+    return componentDir;
+  }
+
+  /**
+   * Checks if the given directory contains metadata for the specified component.
+   *
+   * <p>This method identifies component-specific marker files or directories that indicate
+   * the presence of component data. It's used to detect where existing data is located
+   * (either in the old flat structure or the new component-specific structure).
+   *
+   * <p><b>Component Markers:</b>
+   * <ul>
+   *   <li>SCM: {@code scm.db/} directory (RocksDB database)</li>
+   *   <li>OM: {@code om.db/} directory (RocksDB database)</li>
+   *   <li>Datanode: {@code datanode.id} file or {@code current/hdds/} directory</li>
+   *   <li>scm-ha: {@code current/} directory (Ratis storage structure)</li>
+   *   <li>Others: {@code VERSION} file (generic fallback)</li>
+   * </ul>
+   *
+   * @param dir Directory to check for component data
+   * @param component Component name
+   * @return {@code true} if the directory contains data for this component, {@code false} otherwise
+   */
+  private static boolean hasComponentData(File dir, String component) {
+    if (!dir.exists()) {
+      return false;
+    }
+
+    switch (component) {
+    case "scm":
+      // SCM stores its metadata in a RocksDB database directory named scm.db
+      return new File(dir, "scm.db").exists();
+
+    case "om":
+      // OM stores its metadata in a RocksDB database directory named om.db
+      return new File(dir, "om.db").exists();
+
+    case "datanode":
+      // Datanode can use either:
+      // - datanode.id file (primary marker)
+      // - current/hdds/ directory (alternative marker for older versions)
+      return new File(dir, "datanode.id").exists() ||
+          new File(new File(dir, "current"), "hdds").exists();
+
+    default:
+      // For unknown/future components, fall back to checking for a VERSION file
+      // which is typically created when a component initializes its storage
+      return new File(dir, Storage.STORAGE_FILE_VERSION).exists();
+    }
+  }
+
   public static void setOzoneMetaDirPath(OzoneConfiguration conf,
                                          String path) {
     conf.set(HddsConfigKeys.OZONE_METADATA_DIRS, path);
@@ -277,6 +402,7 @@ public final class ServerUtils {
    * Returns with the service specific metadata directory.
    * <p>
    * If the directory is missing the method tries to create it.
+   * Falls back to {ozone.metadata.dirs}/om if the key is not configured.
    *
    * @param conf The ozone configuration object
    * @param key  The configuration key which specify the directory.
@@ -292,7 +418,7 @@ public final class ServerUtils {
     LOG.warn("{} is not configured. We recommend adding this setting. "
             + "Falling back to {} instead.", key,
         HddsConfigKeys.OZONE_METADATA_DIRS);
-    return ServerUtils.getOzoneMetaDirPath(conf);
+    return ServerUtils.getOzoneMetaDirPath(conf, "om");
   }
 
   public static String getRemoteUserName() {
@@ -300,11 +426,19 @@ public final class ServerUtils {
     return remoteUser != null ? remoteUser.getUserName() : null;
   }
 
-  public static String getDefaultRatisDirectory(ConfigurationSource conf) {
-    LOG.warn("Storage directory for Ratis is not configured. It is a good " +
-            "idea to map this to an SSD disk. Falling back to {}",
-        HddsConfigKeys.OZONE_METADATA_DIRS);
-    File metaDirPath = ServerUtils.getOzoneMetaDirPath(conf);
-    return (new File(metaDirPath, "ratis")).getPath();
+  /**
+   * Returns the default Ratis storage directory as {ozone.metadata.dirs}/{component}/ratis.
+   * Used as fallback when component-specific Ratis directory is not configured.
+   *
+   * @param conf the configuration source
+   * @param component the component name (e.g., "scm", "om", "datanode")
+   * @return the path to the component-specific Ratis storage directory
+   */
+  public static String getDefaultRatisDirectory(ConfigurationSource conf, String component) {
+    LOG.warn("Storage directory for Ratis is not configured for {}. It is a good " +
+            "idea to map this to an SSD disk. Falling back to {} with component prefix",
+        component, HddsConfigKeys.OZONE_METADATA_DIRS);
+    File metaDirPath = getOzoneMetaDirPath(conf, component);
+    return new File(metaDirPath, "ratis").getPath();
   }
 }

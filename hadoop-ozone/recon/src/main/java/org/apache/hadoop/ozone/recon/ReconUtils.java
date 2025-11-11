@@ -149,7 +149,7 @@ public class ReconUtils {
     log.warn("{} is not configured. We recommend adding this setting. " +
             "Falling back to {} instead.",
         dirConfigKey, HddsConfigKeys.OZONE_METADATA_DIRS);
-    return getOzoneMetaDirPath(conf);
+    return getOzoneMetaDirPath(conf, "recon");
   }
 
   /**

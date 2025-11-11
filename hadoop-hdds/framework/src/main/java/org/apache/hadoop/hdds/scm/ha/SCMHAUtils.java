@@ -97,7 +97,7 @@ public final class SCMHAUtils {
             conf.get(ScmConfigKeys.OZONE_SCM_HA_RATIS_STORAGE_DIR);
 
     if (Strings.isNullOrEmpty(scmRatisDirectory)) {
-      scmRatisDirectory = ServerUtils.getDefaultRatisDirectory(conf);
+      scmRatisDirectory = ServerUtils.getDefaultRatisDirectory(conf, "scm");
     }
     return scmRatisDirectory;
   }
@@ -115,11 +115,11 @@ public final class SCMHAUtils {
     String snapshotDir =
             conf.get(ScmConfigKeys.OZONE_SCM_HA_RATIS_SNAPSHOT_DIR);
 
-    // If ratis snapshot directory is not set, fall back to ozone.metadata.dir.
+    // If ratis snapshot directory is not set, fall back to ozone.metadata.dir/scm.
     if (Strings.isNullOrEmpty(snapshotDir)) {
       LOG.warn("SCM snapshot dir is not configured. Falling back to {} config",
           OZONE_METADATA_DIRS);
-      File metaDirPath = ServerUtils.getOzoneMetaDirPath(conf);
+      File metaDirPath = ServerUtils.getOzoneMetaDirPath(conf, "scm");
       snapshotDir =
           Paths.get(metaDirPath.getPath(), OZONE_RATIS_SNAPSHOT_DIR).toString();
     }

@@ -66,7 +66,7 @@ repair_and_restart_om() {
   echo "Repair command executed for ${om_id}."
   docker start "${om_container}"
   echo "Container '${om_container}' started again."
-  bucketTable=$(execute_command_in_container ${SCM} bash -c "ozone debug ldb --db=/opt/hadoop/compose/ozonesecure-ha/data/$om_id/metadata/om.db scan --cf=bucketTable")
+  bucketTable=$(execute_command_in_container ${SCM} bash -c "ozone debug ldb --db=/opt/hadoop/compose/ozonesecure-ha/data/$om_id/metadata/om/om.db scan --cf=bucketTable")
   echo "Bucket table for ${om_id}:"
   if echo "$bucketTable" | grep -q "bucket-crash-1"; then
     echo "bucket 'bucket-crash-1' should not have been created, but it is present in the bucketTable of $om_id"

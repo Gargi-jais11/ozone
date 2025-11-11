@@ -165,7 +165,7 @@ public class TestHddsServerUtils {
   }
 
   /**
-   * Test {@link ServerUtils#getScmDbDir} with fallback to OZONE_METADATA_DIRS
+   * Test {@link ServerUtils#getScmDbDir} with fallback to OZONE_METADATA_DIRS/datanode
    * when OZONE_SCM_DB_DIRS is undefined.
    */
   @Test
@@ -174,9 +174,12 @@ public class TestHddsServerUtils {
     final File metaDir = new File(testDir, "metaDir");
     final OzoneConfiguration conf = new OzoneConfiguration();
     conf.set(HddsConfigKeys.OZONE_METADATA_DIRS, metaDir.getPath());
+    // With component-specific subdirectories, fallback returns metaDir/scm
+    File expectedScmDir = new File(metaDir, "scm");
     try {
-      assertEquals(metaDir, ServerUtils.getScmDbDir(conf));
-      assertTrue(metaDir.exists());        // should have been created.
+      assertEquals(expectedScmDir, ServerUtils.getScmDbDir(conf));
+      assertTrue(expectedScmDir.exists());        // should have been created.
+      assertTrue(metaDir.exists());        // parent should also exist.
     } finally {
       FileUtils.deleteQuietly(metaDir);
     }
@@ -216,15 +219,15 @@ public class TestHddsServerUtils {
     conf.set(HddsConfigKeys.OZONE_METADATA_DIRS, metaDir.getPath());
 
     try {
-      // test fallback if not set
-      assertEquals(new File(metaDir,
-              OZONE_SCM_DATANODE_ID_FILE_DEFAULT).toString(),
+      // test fallback if not set - now uses datanodeIdFilePath component subdir
+      String datanodeIdFilePath = new File(new File(metaDir, "datanode"),
+          OZONE_SCM_DATANODE_ID_FILE_DEFAULT).toString();
+      assertEquals(datanodeIdFilePath,
           HddsServerUtil.getDatanodeIdFilePath(conf));
 
       // test fallback if set empty
       conf.set(OZONE_SCM_DATANODE_ID_DIR, "");
-      assertEquals(new File(metaDir,
-              OZONE_SCM_DATANODE_ID_FILE_DEFAULT).toString(),
+      assertEquals(datanodeIdFilePath,
           HddsServerUtil.getDatanodeIdFilePath(conf));
 
       // test use specific value if set
