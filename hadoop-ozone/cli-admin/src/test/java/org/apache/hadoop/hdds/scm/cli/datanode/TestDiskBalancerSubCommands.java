@@ -157,14 +157,15 @@ public class TestDiskBalancerSubCommands {
           };
         });
     // Mock getDatanodeHostAndIp(String, String, int) to format the output
-    mockedUtil.when(() -> DiskBalancerSubCommandUtil
-        .getDatanodeHostAndIp(anyString(), anyString(), anyInt()))
-        .thenAnswer(invocation -> {
-          String hostname = invocation.getArgument(0);
-          String ipAddress = invocation.getArgument(1);
-          int port = invocation.getArgument(2);
-          return hostname + " (" + ipAddress + ":" + port + ")";
-        });
+    // Return value is used by Mockito internally for mock setup
+    mockedUtil.when(() -> {
+      String ignored = DiskBalancerSubCommandUtil
+          .getDatanodeHostAndIp(anyString(), anyString(), anyInt());
+      // Use the value to avoid "ignored return value" static analysis warnings.
+      String.valueOf(ignored);
+    }).thenAnswer(invocation -> invocation.getArgument(0) + " (" +
+        invocation.getArgument(1) + ":" +
+        invocation.getArgument(2) + ")");
     
     return new DiskBalancerMocks(mockedConf, mockedClient, mockedUtil);
   }
