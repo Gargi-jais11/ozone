@@ -2764,6 +2764,12 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
    * @return true if admin authorization checks should be performed
    */
   public boolean isAdminAuthorizationEnabled() {
+    // ONLY IN TESTS: Allow authorization testing without Kerberos
+    if (testSecureOmFlag) {
+      return isAuthorizationEnabled; // Skip security check
+    }
+
+    // require full security + authorization
     return OzoneSecurityUtil.isAuthorizationEnabled(configuration);
   }
 

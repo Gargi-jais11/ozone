@@ -80,7 +80,7 @@ public class DBCheckpointServlet extends HttpServlet
   private transient File bootstrapTempData;
 
   public void initialize(DBStore store, DBCheckpointMetrics metrics,
-                         boolean authorizationEnabled,
+                         boolean isAuthorizationEnabled,
                          Collection<String> allowedAdminUsers,
                          Collection<String> allowedAdminGroups,
                          boolean isSpnegoAuthEnabled)
@@ -94,7 +94,7 @@ public class DBCheckpointServlet extends HttpServlet
       throw new ServletException("DB Store is null");
     }
 
-    this.authorizationEnabled = authorizationEnabled;
+    this.authorizationEnabled = isAuthorizationEnabled;
     this.admins = new OzoneAdmins(allowedAdminUsers, allowedAdminGroups);
     this.isSpnegoEnabled = isSpnegoAuthEnabled;
     lock = new NoOpLock();

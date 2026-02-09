@@ -260,7 +260,7 @@ public class TestOMDbCheckpointServlet {
     doCallRealMethod().when(omDbCheckpointServletMock).initialize(
         om.getMetadataManager().getStore(),
         om.getMetrics().getDBCheckpointMetrics(),
-        om.getAclsEnabled(),
+        om.isAdminAuthorizationEnabled(),
         om.getOmAdminUsernames(),
         om.getOmAdminGroups(),
         om.isSpnegoEnabled());
@@ -300,7 +300,7 @@ public class TestOMDbCheckpointServlet {
     doCallRealMethod().when(omDbCheckpointServletMock).initialize(
         om.getMetadataManager().getStore(),
         om.getMetrics().getDBCheckpointMetrics(),
-        om.getAclsEnabled(),
+        om.isAdminAuthorizationEnabled(),
         om.getOmAdminUsernames(),
         om.getOmAdminGroups(),
         om.isSpnegoEnabled());
@@ -320,6 +320,8 @@ public class TestOMDbCheckpointServlet {
 
   @Test
   void testSpnegoEnabled() throws Exception {
+    // Enable test security mode to allow authorization checks without Kerberos
+    OzoneManager.setTestSecureOmFlag(true);
     conf.setBoolean(OZONE_ACL_ENABLED, true);
     conf.set(OZONE_ADMINISTRATORS, "");
     conf.set(OZONE_OM_HTTP_AUTH_TYPE, "kerberos");

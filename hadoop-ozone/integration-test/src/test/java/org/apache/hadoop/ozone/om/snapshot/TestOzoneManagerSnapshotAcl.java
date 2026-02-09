@@ -107,6 +107,8 @@ public class TestOzoneManagerSnapshotAcl {
   public static void init() throws Exception {
     UserGroupInformation.setLoginUser(ADMIN_UGI);
     final OzoneConfiguration conf = new OzoneConfiguration();
+    // Enable test security mode to allow ACL testing without Kerberos
+    OzoneManager.setTestSecureOmFlag(true);
     conf.setBoolean(OZONE_ACL_ENABLED, true);
     conf.set(OZONE_ACL_AUTHORIZER_CLASS, OZONE_ACL_AUTHORIZER_CLASS_NATIVE);
 

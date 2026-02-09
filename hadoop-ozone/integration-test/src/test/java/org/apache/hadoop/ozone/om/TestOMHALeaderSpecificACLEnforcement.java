@@ -187,6 +187,9 @@ public class TestOMHALeaderSpecificACLEnforcement {
   private OzoneConfiguration createBaseConfiguration() throws IOException {
     OzoneConfiguration conf = new OzoneConfiguration();
     
+    // Enable test security mode to allow ACL testing without Kerberos
+    OzoneManager.setTestSecureOmFlag(true);
+    
     // Enable ACL for proper permission testing
     conf.setBoolean(OZONE_ACL_ENABLED, true);
     

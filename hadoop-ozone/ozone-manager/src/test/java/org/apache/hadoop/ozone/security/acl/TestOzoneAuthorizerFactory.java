@@ -173,6 +173,8 @@ class TestOzoneAuthorizerFactory {
         .thenReturn(conf);
     when(om.getAclsEnabled())
         .thenReturn(aclEnabled);
+    when(om.isObjectAclEnabled())
+        .thenReturn(aclEnabled);
 
     return om;
   }
