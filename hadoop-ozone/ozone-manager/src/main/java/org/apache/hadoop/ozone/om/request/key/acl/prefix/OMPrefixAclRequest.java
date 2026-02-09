@@ -77,7 +77,7 @@ public abstract class OMPrefixAclRequest extends OMClientRequest {
       prefixPath = resolvedPrefixObj.getPath();
 
       // check Acl
-      if (ozoneManager.getAclsEnabled()) {
+      if (ozoneManager.isObjectAclEnabled()) {
         checkAcls(ozoneManager, OzoneObj.ResourceType.PREFIX,
             OzoneObj.StoreType.OZONE, IAccessAuthorizer.ACLType.WRITE_ACL,
             resolvedPrefixObj.getVolumeName(), resolvedPrefixObj.getBucketName(),

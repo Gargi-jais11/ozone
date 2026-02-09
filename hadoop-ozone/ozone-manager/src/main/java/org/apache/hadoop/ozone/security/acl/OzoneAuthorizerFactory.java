@@ -71,7 +71,7 @@ public final class OzoneAuthorizerFactory {
   }
 
   private static IAccessAuthorizer createImpl(OzoneManager om, KeyManager km, PrefixManager pm) {
-    if (!om.getAclsEnabled()) {
+    if (!om.isObjectAclEnabled()) {
       return OzoneAccessAuthorizer.get();
     }
 

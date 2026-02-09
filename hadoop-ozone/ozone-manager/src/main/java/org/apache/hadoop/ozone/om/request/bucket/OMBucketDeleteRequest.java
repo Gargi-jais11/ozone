@@ -102,7 +102,7 @@ public class OMBucketDeleteRequest extends OMClientRequest {
     OMClientResponse omClientResponse = null;
     try {
       // check Acl
-      if (ozoneManager.getAclsEnabled()) {
+      if (ozoneManager.isObjectAclEnabled()) {
         checkAcls(ozoneManager, OzoneObj.ResourceType.BUCKET,
             OzoneObj.StoreType.OZONE, IAccessAuthorizer.ACLType.DELETE,
             volumeName, bucketName, null);

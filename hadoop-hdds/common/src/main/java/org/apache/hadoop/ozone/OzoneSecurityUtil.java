@@ -17,6 +17,8 @@
 
 package org.apache.hadoop.ozone;
 
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_AUTHORIZATION_ENABLED;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_AUTHORIZATION_ENABLED_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_HTTP_SECURITY_ENABLED_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_HTTP_SECURITY_ENABLED_KEY;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_SECURITY_ENABLED_DEFAULT;
@@ -69,6 +71,20 @@ public final class OzoneSecurityUtil {
     return isSecurityEnabled(conf) &&
         conf.getBoolean(OZONE_HTTP_SECURITY_ENABLED_KEY,
         OZONE_HTTP_SECURITY_ENABLED_DEFAULT);
+  }
+
+  /**
+   * Check if authorization checks should be performed in Ozone.
+   * Authorization is only effective when security is enabled.
+   * This controls both admin privilege checks and ACL checks.
+   *
+   * @param conf Configuration source
+   * @return true if authorization checks should be performed
+   */
+  public static boolean isAuthorizationEnabled(ConfigurationSource conf) {
+    return isSecurityEnabled(conf) &&
+        conf.getBoolean(OZONE_AUTHORIZATION_ENABLED,
+            OZONE_AUTHORIZATION_ENABLED_DEFAULT);
   }
 
   /**

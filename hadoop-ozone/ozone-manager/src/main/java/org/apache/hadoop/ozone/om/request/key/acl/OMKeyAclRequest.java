@@ -88,7 +88,7 @@ public abstract class OMKeyAclRequest extends OMClientRequest {
       key = objectParser.getKey();
 
       // check Acl
-      if (ozoneManager.getAclsEnabled()) {
+      if (ozoneManager.isObjectAclEnabled()) {
         checkAcls(ozoneManager, OzoneObj.ResourceType.KEY,
             OzoneObj.StoreType.OZONE, IAccessAuthorizer.ACLType.WRITE_ACL,
             volume, bucket, key);

@@ -74,7 +74,7 @@ public class OMVolumeCreateRequest extends OMVolumeRequest {
         ozoneManager.isStrictS3());
 
     // ACL check during preExecute
-    if (ozoneManager.getAclsEnabled()) {
+    if (ozoneManager.isObjectAclEnabled()) {
       try {
         checkAcls(ozoneManager, OzoneObj.ResourceType.VOLUME,
             OzoneObj.StoreType.OZONE, IAccessAuthorizer.ACLType.CREATE,

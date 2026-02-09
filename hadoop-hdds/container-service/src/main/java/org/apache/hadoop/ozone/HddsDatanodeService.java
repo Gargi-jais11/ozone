@@ -93,6 +93,7 @@ import org.apache.hadoop.ozone.container.common.volume.HddsVolume;
 import org.apache.hadoop.ozone.container.common.volume.MutableVolumeSet;
 import org.apache.hadoop.ozone.container.common.volume.StorageVolume;
 import org.apache.hadoop.ozone.container.diskbalancer.DiskBalancerProtocolServer;
+import org.apache.hadoop.ozone.OzoneSecurityUtil;
 import org.apache.hadoop.ozone.util.OzoneNetUtils;
 import org.apache.hadoop.ozone.util.ShutdownHookManager;
 import org.apache.hadoop.security.SecurityUtil;
@@ -670,6 +671,11 @@ public class HddsDatanodeService extends GenericCli implements Callable<Void>, S
    */
   private void checkAdminPrivilege(String operation)
       throws IOException {
+    // Skip check if authorization is disabled
+    if (!OzoneSecurityUtil.isAuthorizationEnabled(conf)) {
+      return;
+    }
+
     final UserGroupInformation ugi = getRemoteUser();
     admins.checkAdminUserPrivilege(ugi);
   }

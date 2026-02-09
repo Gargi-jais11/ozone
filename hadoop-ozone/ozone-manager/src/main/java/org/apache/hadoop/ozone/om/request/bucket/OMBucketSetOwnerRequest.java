@@ -110,7 +110,7 @@ public class OMBucketSetOwnerRequest extends OMClientRequest {
     OMClientResponse omClientResponse = null;
     try {
       // check Acl
-      if (ozoneManager.getAclsEnabled()) {
+      if (ozoneManager.isObjectAclEnabled()) {
         checkAcls(ozoneManager, OzoneObj.ResourceType.BUCKET,
             OzoneObj.StoreType.OZONE, IAccessAuthorizer.ACLType.WRITE_ACL,
             volumeName, bucketName, null);

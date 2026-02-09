@@ -34,6 +34,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
+import org.apache.hadoop.ozone.OzoneSecurityUtil;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.StringUtils;
@@ -103,6 +104,8 @@ public class OzoneAdmins {
 
   /**
    * Check ozone admin privilege, throws exception if not admin.
+   * Note: This method does NOT check if authorization is enabled.
+   * Callers should check authorization before calling this method.
    */
   public void checkAdminUserPrivilege(UserGroupInformation ugi)
       throws AccessControlException {

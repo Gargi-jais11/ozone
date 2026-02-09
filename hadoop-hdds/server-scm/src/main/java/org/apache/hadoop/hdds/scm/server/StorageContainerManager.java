@@ -24,6 +24,8 @@ import static org.apache.hadoop.hdds.scm.security.SecretKeyManagerService.isSecr
 import static org.apache.hadoop.hdds.utils.HddsServerUtil.getRemoteUser;
 import static org.apache.hadoop.hdds.utils.HddsServerUtil.getScmSecurityClientWithMaxRetry;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ADMINISTRATORS;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_AUTHORIZATION_ENABLED;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_AUTHORIZATION_ENABLED_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_READONLY_ADMINISTRATORS;
 import static org.apache.hadoop.ozone.OzoneConsts.SCM_ROOT_CA_COMPONENT_NAME;
 import static org.apache.hadoop.ozone.OzoneConsts.SCM_SUB_CA_PREFIX;
@@ -284,6 +286,8 @@ public final class StorageContainerManager extends ServiceRuntimeInfoImpl
   private ContainerTokenSecretManager containerTokenMgr;
 
   private OzoneConfiguration configuration;
+  private final boolean isSecurityEnabled;
+  private final boolean isAuthorizationEnabled;
   private SCMContainerMetrics scmContainerMetrics;
   private SCMContainerPlacementMetrics placementMetrics;
   private PlacementPolicy containerPlacementPolicy;
@@ -356,6 +360,12 @@ public final class StorageContainerManager extends ServiceRuntimeInfoImpl
 
     scmHANodeDetails = SCMHANodeDetails.loadSCMHAConfig(conf, scmStorageConfig);
     configuration = conf;
+    this.isSecurityEnabled = OzoneSecurityUtil.isSecurityEnabled(conf);
+    this.isAuthorizationEnabled = conf.getBoolean(
+        OZONE_AUTHORIZATION_ENABLED,
+        OZONE_AUTHORIZATION_ENABLED_DEFAULT);
+    LOG.info("SCM Security enabled: {}, Authorization enabled: {}",
+        isSecurityEnabled, isAuthorizationEnabled);
     initMetrics();
     initPerfMetrics();
 
@@ -1918,8 +1928,23 @@ public final class StorageContainerManager extends ServiceRuntimeInfoImpl
     checkAdminAccess(getRemoteUser(), false);
   }
 
+  /**
+   * Check if admin privilege authorization should be enforced.
+   * This controls system-level admin operations (upgrades, decommission, etc.)
+   *
+   * @return true if admin authorization checks should be performed
+   */
+  public boolean isAdminAuthorizationEnabled() {
+    return OzoneSecurityUtil.isAuthorizationEnabled(configuration);
+  }
+
   public void checkAdminAccess(UserGroupInformation remoteUser, boolean isRead)
       throws IOException {
+    // Skip check if authorization is disabled
+    if (!isAdminAuthorizationEnabled()) {
+      return;
+    }
+    
     if (remoteUser != null && !scmAdmins.isAdmin(remoteUser)) {
       if (!isRead || !scmReadOnlyAdmins.isAdmin(remoteUser)) {
         throw new AccessControlException(

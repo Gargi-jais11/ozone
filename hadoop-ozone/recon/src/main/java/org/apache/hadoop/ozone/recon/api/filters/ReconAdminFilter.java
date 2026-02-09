@@ -34,6 +34,7 @@ import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.recon.ReconConfigKeys;
 import org.apache.hadoop.hdds.server.OzoneAdmins;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
+import org.apache.hadoop.ozone.OzoneSecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,6 +101,11 @@ public class ReconAdminFilter implements Filter {
   public void destroy() { }
 
   private boolean hasPermission(UserGroupInformation user) {
+    // Check authorization first - only check admin if authorization is enabled
+    if (!isAdminAuthorizationEnabled()) {
+      return true;  // Authorization disabled, allow all
+    }
+    
     Collection<String> admins =
         conf.getStringCollection(OzoneConfigKeys.OZONE_ADMINISTRATORS);
     admins.addAll(
@@ -110,5 +116,9 @@ public class ReconAdminFilter implements Filter {
         conf.getStringCollection(
             ReconConfigKeys.OZONE_RECON_ADMINISTRATORS_GROUPS));
     return new OzoneAdmins(admins, adminGroups).isAdmin(user);
+  }
+
+  private boolean isAdminAuthorizationEnabled() {
+    return OzoneSecurityUtil.isAuthorizationEnabled(conf);
   }
 }

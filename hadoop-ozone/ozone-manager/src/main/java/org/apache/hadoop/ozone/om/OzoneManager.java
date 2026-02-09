@@ -32,6 +32,8 @@ import static org.apache.hadoop.ozone.OzoneAcl.AclScope.ACCESS;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ACL_ENABLED;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ACL_ENABLED_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ADMINISTRATORS;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_AUTHORIZATION_ENABLED;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_AUTHORIZATION_ENABLED_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_FLEXIBLE_FQDN_RESOLUTION_ENABLED;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_FLEXIBLE_FQDN_RESOLUTION_ENABLED_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_KEY_PREALLOCATION_BLOCKS_MAX;
@@ -426,6 +428,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
       new ObjectMapper().readerFor(OmMetricsInfo.class);
   private static final int SHUTDOWN_HOOK_PRIORITY = 30;
   private final File omMetaDir;
+  private boolean isAuthorizationEnabled;
   private boolean isAclEnabled;
   private final boolean isSpnegoEnabled;
   private final SecurityConfig secConfig;
@@ -864,8 +867,13 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
    * require.
    */
   private void setInstanceVariablesFromConf() {
+    this.isAuthorizationEnabled = configuration.getBoolean(
+        OZONE_AUTHORIZATION_ENABLED,
+        OZONE_AUTHORIZATION_ENABLED_DEFAULT);
     this.isAclEnabled = configuration.getBoolean(OZONE_ACL_ENABLED,
         OZONE_ACL_ENABLED_DEFAULT);
+    LOG.info("Authorization enabled: {}, ACL enabled: {}",
+        isAuthorizationEnabled, isAclEnabled);
   }
 
   /**
@@ -2750,6 +2758,26 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
   }
 
   /**
+   * Check if admin privilege authorization should be enforced.
+   * This controls system-level admin operations (upgrades, decommission, etc.)
+   *
+   * @return true if admin authorization checks should be performed
+   */
+  public boolean isAdminAuthorizationEnabled() {
+    return OzoneSecurityUtil.isAuthorizationEnabled(configuration);
+  }
+
+  /**
+   * Check if object ACL checks should be enforced.
+   * This controls volume/bucket/key level permissions.
+   *
+   * @return true if object ACL checks should be performed
+   */
+  public boolean isObjectAclEnabled() {
+    return isAdminAuthorizationEnabled() && getAclsEnabled();
+  }
+
+  /**
    * Return true if Ozone acl's are enabled, else false.
    *
    * @return boolean
@@ -3526,7 +3554,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
 
     final UserGroupInformation ugi = getRemoteUser();
     // Check Ozone admin privilege
-    if (!isAdmin(ugi)) {
+    if (isAdminAuthorizationEnabled() && !isAdmin(ugi)) {
       throw new OMException("Only Ozone admins are allowed to trigger "
           + "Ranger background sync manually", PERMISSION_DENIED);
     }
@@ -3566,7 +3594,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
 
     final UserGroupInformation ugi = getRemoteUser();
     // Check Ozone admin privilege
-    if (!isAdmin(ugi)) {
+    if (isAdminAuthorizationEnabled() && !isAdmin(ugi)) {
       throw new OMException("Only Ozone admins are allowed to trigger "
           + "snapshot defragmentation manually", PERMISSION_DENIED);
     }
@@ -3623,7 +3651,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
     metrics.incNumTenantLists();
 
     final UserGroupInformation ugi = getRemoteUser();
-    if (!isAdmin(ugi)) {
+    if (isAdminAuthorizationEnabled() && !isAdmin(ugi)) {
       final OMException omEx = new OMException(
           "Only Ozone admins are allowed to list tenants.", PERMISSION_DENIED);
       AUDIT.logReadFailure(buildAuditMessageForFailure(
@@ -4591,8 +4619,14 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
 
   /**
    * Check ozone admin privilege, throws exception if not admin.
+   * Only checks admin privilege if authorization is enabled.
    */
   private void checkAdminUserPrivilege(String operation) throws IOException {
+    // Skip check if authorization is disabled
+    if (!isAdminAuthorizationEnabled()) {
+      return;
+    }
+    
     final UserGroupInformation ugi = getRemoteUser();
     if (!isAdmin(ugi)) {
       throw new OMException("Only Ozone admins are allowed to " + operation,
