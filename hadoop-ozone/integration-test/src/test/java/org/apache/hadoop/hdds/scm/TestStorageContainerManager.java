@@ -168,6 +168,7 @@ public class TestStorageContainerManager {
   @Test
   void test(@TempDir Path tempDir) throws Exception {
     OzoneConfiguration conf = new OzoneConfiguration();
+    StorageContainerManager.setTestSecureScmFlag(true);
     configureTopology(conf);
     configureBlockDeletion(conf);
     Path scmPath = tempDir.resolve("scm-meta");

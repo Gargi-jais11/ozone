@@ -223,6 +223,13 @@ public final class StorageContainerManager extends ServiceRuntimeInfoImpl
       .getLogger(StorageContainerManager.class);
 
   /**
+   * Test-only flag to enable authorization checks without full Kerberos security.
+   * When true, isAdminAuthorizationEnabled() returns the authorization config
+   * value, allowing tests to verify admin checks without Kerberos setup.
+   */
+  private static boolean testSecureScmFlag = false;
+
+  /**
    * SCM metrics.
    */
   private static SCMMetrics metrics;
@@ -1935,7 +1942,16 @@ public final class StorageContainerManager extends ServiceRuntimeInfoImpl
    * @return true if admin authorization checks should be performed
    */
   public boolean isAdminAuthorizationEnabled() {
+    // ONLY IN TESTS: Allow authorization testing without Kerberos
+    if (testSecureScmFlag) {
+      return isAuthorizationEnabled;
+    }
     return OzoneSecurityUtil.isAuthorizationEnabled(configuration);
+  }
+
+  @VisibleForTesting
+  public static void setTestSecureScmFlag(boolean flag) {
+    testSecureScmFlag = flag;
   }
 
   public void checkAdminAccess(UserGroupInformation remoteUser, boolean isRead)

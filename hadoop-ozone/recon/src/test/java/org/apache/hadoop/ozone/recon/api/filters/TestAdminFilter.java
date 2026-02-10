@@ -172,6 +172,7 @@ public class TestAdminFilter {
 
   private void testAdminFilterWithPrincipal(OzoneConfiguration conf,
       String principalToUse, boolean shouldPass) throws Exception {
+    conf.setBoolean(OzoneConfigKeys.OZONE_SECURITY_ENABLED_KEY, true);
     Principal mockPrincipal = mock(Principal.class);
     when(mockPrincipal.getName()).thenReturn(principalToUse);
     HttpServletRequest mockRequest = mock(HttpServletRequest.class);

@@ -63,6 +63,7 @@ public class TestSCMClientProtocolServer {
 
   @BeforeEach
   void setUp(@TempDir File testDir) throws Exception {
+    StorageContainerManager.setTestSecureScmFlag(true);
     OzoneConfiguration config = SCMTestUtils.getConf(testDir);
     SCMConfigurator configurator = new SCMConfigurator();
     configurator.setSCMHAManager(SCMHAManagerStub.getInstance(true));
@@ -83,6 +84,7 @@ public class TestSCMClientProtocolServer {
       scm.stop();
       scm.join();
     }
+    StorageContainerManager.setTestSecureScmFlag(false);
   }
 
   /**

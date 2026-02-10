@@ -408,41 +408,46 @@ public class TestAddRemoveOzoneManager {
    */
   @Test
   public void testDecommission() throws Exception {
-    setupCluster(3);
+    OzoneManager.setTestSecureOmFlag(true);
+    try {
+      setupCluster(3);
 
-    user = UserGroupInformation.createUserForTesting("user", new String[]{});
-    // Stop the 3rd OM and decommission it using non-privileged user
-    String omNodeId3 = cluster.getOzoneManager(2).getOMNodeId();
-    cluster.stopOzoneManager(omNodeId3);
-    // decommission should fail
-    assertThrows(IOException.class, () -> decommissionOM(omNodeId3));
+      user = UserGroupInformation.createUserForTesting("user", new String[]{});
+      // Stop the 3rd OM and decommission it using non-privileged user
+      String omNodeId3 = cluster.getOzoneManager(2).getOMNodeId();
+      cluster.stopOzoneManager(omNodeId3);
+      // decommission should fail
+      assertThrows(IOException.class, () -> decommissionOM(omNodeId3));
 
-    // Switch to admin user
-    user = UserGroupInformation.getCurrentUser();
-    // Stop the 3rd OM and decommission it
-    cluster.stopOzoneManager(omNodeId3);
-    decommissionOM(omNodeId3);
+      // Switch to admin user
+      user = UserGroupInformation.getCurrentUser();
+      // Stop the 3rd OM and decommission it
+      cluster.stopOzoneManager(omNodeId3);
+      decommissionOM(omNodeId3);
 
-    // Decommission the non leader OM and then stop it. Stopping OM before will
-    // lead to no quorum and there will not be a elected leader OM to process
-    // the decommission request.
-    String omNodeId2;
-    if (cluster.getOMLeader().getOMNodeId().equals(
-        cluster.getOzoneManager(1).getOMNodeId())) {
-      omNodeId2 = cluster.getOzoneManager(0).getOMNodeId();
-    } else {
-      omNodeId2 = cluster.getOzoneManager(1).getOMNodeId();
+      // Decommission the non leader OM and then stop it. Stopping OM before will
+      // lead to no quorum and there will not be a elected leader OM to process
+      // the decommission request.
+      String omNodeId2;
+      if (cluster.getOMLeader().getOMNodeId().equals(
+          cluster.getOzoneManager(1).getOMNodeId())) {
+        omNodeId2 = cluster.getOzoneManager(0).getOMNodeId();
+      } else {
+        omNodeId2 = cluster.getOzoneManager(1).getOMNodeId();
+      }
+      decommissionOM(omNodeId2);
+      cluster.stopOzoneManager(omNodeId2);
+
+      // Verify that we can read/ write to the cluster with only 1 OM.
+      OzoneVolume volume = objectStore.getVolume(VOLUME_NAME);
+      OzoneBucket bucket = volume.getBucket(BUCKET_NAME);
+      String key = createKey(bucket);
+
+      assertNotNull(bucket.getKey(key));
+
+    } finally {
+      OzoneManager.setTestSecureOmFlag(false);
     }
-    decommissionOM(omNodeId2);
-    cluster.stopOzoneManager(omNodeId2);
-
-    // Verify that we can read/ write to the cluster with only 1 OM.
-    OzoneVolume volume = objectStore.getVolume(VOLUME_NAME);
-    OzoneBucket bucket = volume.getBucket(BUCKET_NAME);
-    String key = createKey(bucket);
-
-    assertNotNull(bucket.getKey(key));
-
   }
 
   /**
