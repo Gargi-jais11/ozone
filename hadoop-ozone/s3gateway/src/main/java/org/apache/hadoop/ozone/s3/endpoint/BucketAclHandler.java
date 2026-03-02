@@ -27,8 +27,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
-import javax.annotation.PostConstruct;
+import java.util.Set;
+import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.ozone.OzoneAcl;
@@ -38,11 +40,11 @@ import org.apache.hadoop.ozone.client.OzoneVolume;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes;
 import org.apache.hadoop.ozone.om.helpers.OzoneAclUtil;
+import org.apache.hadoop.ozone.s3.endpoint.S3BucketAcl.Grant;
 import org.apache.hadoop.ozone.s3.exception.OS3Exception;
 import org.apache.hadoop.ozone.s3.exception.S3ErrorTable;
 import org.apache.hadoop.ozone.s3.util.S3Consts.QueryParams;
 import org.apache.hadoop.ozone.security.acl.IAccessAuthorizer;
-import org.apache.hadoop.util.Time;
 import org.apache.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,7 +56,7 @@ import org.slf4j.LoggerFactory;
  * This handler extends EndpointBase to inherit all required functionality
  * (configuration, headers, request context, audit logging, metrics, etc.).
  */
-public class BucketAclHandler extends EndpointBase implements BucketOperationHandler {
+public class BucketAclHandler extends BucketOperationHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(BucketAclHandler.class);
 
@@ -67,20 +69,76 @@ public class BucketAclHandler extends EndpointBase implements BucketOperationHan
   }
 
   /**
-   * Implement acl put.
+   * Implement acl get.
    * <p>
-   * see: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketAcl.html
+   * see: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketAcl.html
    */
   @Override
-  public Response handlePutRequest(String bucketName, InputStream body)
+  Response handleGetRequest(S3RequestContext context, String bucketName)
       throws IOException, OS3Exception {
 
     if (!shouldHandle()) {
       return null;  // Not responsible for this request
     }
 
-    long startNanos = Time.monotonicNowNanos();
-    S3GAction s3GAction = S3GAction.PUT_ACL;
+    context.setAction(S3GAction.GET_ACL);
+
+    try {
+      OzoneBucket bucket = getBucket(bucketName);
+      S3Owner.verifyBucketOwnerCondition(getHeaders(), bucketName, bucket.getOwner());
+      S3Owner owner = S3Owner.of(bucket.getOwner());
+
+      S3BucketAcl result = new S3BucketAcl();
+      result.setOwner(owner);
+
+      // TODO: remove this duplication avoid logic when ACCESS and DEFAULT scope
+      // TODO: are merged.
+      // Use set to remove ACLs with different scopes(ACCESS and DEFAULT)
+      Set<Grant> grantSet = new HashSet<>();
+      // Return ACL list
+      for (OzoneAcl acl : bucket.getAcls()) {
+        List<Grant> grants = S3Acl.ozoneNativeAclToS3Acl(acl);
+        grantSet.addAll(grants);
+      }
+      ArrayList<Grant> grantList = new ArrayList<>();
+      grantList.addAll(grantSet);
+      result.setAclList(
+          new S3BucketAcl.AccessControlList(grantList));
+
+      getMetrics().updateGetAclSuccessStats(context.getStartNanos());
+      auditReadSuccess(context.getAction());
+      return Response.ok(result, MediaType.APPLICATION_XML_TYPE).build();
+    } catch (OMException ex) {
+      getMetrics().updateGetAclFailureStats(context.getStartNanos());
+      auditReadFailure(context.getAction(), ex);
+      if (ex.getResult() == ResultCodes.BUCKET_NOT_FOUND) {
+        throw newError(S3ErrorTable.NO_SUCH_BUCKET, bucketName, ex);
+      } else if (isAccessDenied(ex)) {
+        throw newError(S3ErrorTable.ACCESS_DENIED, bucketName, ex);
+      } else {
+        throw newError(S3ErrorTable.INTERNAL_ERROR, bucketName, ex);
+      }
+    } catch (OS3Exception ex) {
+      getMetrics().updateGetAclFailureStats(context.getStartNanos());
+      auditReadFailure(context.getAction(), ex);
+      throw ex;
+    }
+  }
+
+  /**
+   * Implement acl put.
+   * <p>
+   * see: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketAcl.html
+   */
+  @Override
+  Response handlePutRequest(S3RequestContext context, String bucketName, InputStream body)
+      throws IOException, OS3Exception {
+
+    if (!shouldHandle()) {
+      return null;  // Not responsible for this request
+    }
+
+    context.setAction(S3GAction.PUT_ACL);
 
     String grantReads = getHeaders().getHeaderString(S3Acl.GRANT_READ);
     String grantWrites = getHeaders().getHeaderString(S3Acl.GRANT_WRITE);
@@ -165,13 +223,13 @@ public class BucketAclHandler extends EndpointBase implements BucketOperationHan
         volume.addAcl(acl);
       }
 
-      getMetrics().updatePutAclSuccessStats(startNanos);
-      auditWriteSuccess(s3GAction);
+      getMetrics().updatePutAclSuccessStats(context.getStartNanos());
+      auditWriteSuccess(context.getAction());
       return Response.status(HttpStatus.SC_OK).build();
 
     } catch (OMException exception) {
-      getMetrics().updatePutAclFailureStats(startNanos);
-      auditWriteFailure(s3GAction, exception);
+      getMetrics().updatePutAclFailureStats(context.getStartNanos());
+      auditWriteFailure(context.getAction(), exception);
       if (exception.getResult() == ResultCodes.BUCKET_NOT_FOUND) {
         throw newError(S3ErrorTable.NO_SUCH_BUCKET, bucketName, exception);
       } else if (isAccessDenied(exception)) {
@@ -179,8 +237,8 @@ public class BucketAclHandler extends EndpointBase implements BucketOperationHan
       }
       throw exception;
     } catch (OS3Exception ex) {
-      getMetrics().updatePutAclFailureStats(startNanos);
-      auditWriteFailure(s3GAction, ex);
+      getMetrics().updatePutAclFailureStats(context.getStartNanos());
+      auditWriteFailure(context.getAction(), ex);
       throw ex;
     }
   }
@@ -253,11 +311,5 @@ public class BucketAclHandler extends EndpointBase implements BucketOperationHan
     }
 
     return ozoneAclList;
-  }
-
-  @Override
-  @PostConstruct
-  public void init() {
-    // No initialization needed for BucketAclHandler
   }
 }
