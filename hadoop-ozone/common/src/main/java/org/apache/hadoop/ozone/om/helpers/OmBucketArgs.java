@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.helpers;
 
+import com.google.common.collect.ImmutableMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -63,6 +64,11 @@ public final class OmBucketArgs extends WithMetadata implements Auditable {
    */
   private final String ownerName;
 
+  /**
+   * Tags for S3 bucket tagging RPC (not used for other BucketArgs call paths).
+   */
+  private final ImmutableMap<String, String> tags;
+
   private OmBucketArgs(Builder b) {
     super(b);
     this.volumeName = b.volumeName;
@@ -76,6 +82,7 @@ public final class OmBucketArgs extends WithMetadata implements Auditable {
     this.quotaInNamespaceSet = b.quotaInNamespaceSet;
     this.quotaInNamespace = quotaInNamespaceSet ? b.quotaInNamespace : OzoneConsts.QUOTA_RESET;
     this.bekInfo = b.bekInfo;
+    this.tags = b.tags.build();
   }
 
   /**
@@ -161,6 +168,13 @@ public final class OmBucketArgs extends WithMetadata implements Auditable {
   }
 
   /**
+   * Tags supplied for bucket tagging operations; never null (may be empty).
+   */
+  public Map<String, String> getTags() {
+    return tags;
+  }
+
+  /**
    * Returns new builder class that builds a OmBucketArgs.
    * @return Builder
    */
@@ -222,6 +236,7 @@ public final class OmBucketArgs extends WithMetadata implements Auditable {
     private BucketEncryptionKeyInfo bekInfo;
     private DefaultReplicationConfig defaultReplicationConfig;
     private String ownerName;
+    private final MapBuilder<String, String> tags;
 
     /**
      * Constructs a builder.
@@ -229,6 +244,7 @@ public final class OmBucketArgs extends WithMetadata implements Auditable {
     public Builder() {
       quotaInBytes = OzoneConsts.QUOTA_RESET;
       quotaInNamespace = OzoneConsts.QUOTA_RESET;
+      tags = MapBuilder.empty();
     }
 
     public Builder setVolumeName(String volume) {
@@ -288,6 +304,20 @@ public final class OmBucketArgs extends WithMetadata implements Auditable {
       return this;
     }
 
+    public Builder addAllTags(Map<String, String> tagMap) {
+      if (tagMap != null) {
+        this.tags.putAll(tagMap);
+      }
+      return this;
+    }
+
+    public Builder setTags(Map<String, String> tagMap) {
+      if (tagMap != null) {
+        this.tags.set(tagMap);
+      }
+      return this;
+    }
+
     /**
      * Constructs the OmBucketArgs.
      * @return instance of OmBucketArgs.
@@ -295,6 +325,7 @@ public final class OmBucketArgs extends WithMetadata implements Auditable {
     public OmBucketArgs build() {
       Objects.requireNonNull(volumeName, "volumeName == null");
       Objects.requireNonNull(bucketName, "bucketName == null");
+      Objects.requireNonNull(tags, "tags == null");
       return new OmBucketArgs(this);
     }
   }
@@ -329,6 +360,10 @@ public final class OmBucketArgs extends WithMetadata implements Auditable {
 
     if (bekInfo != null) {
       builder.setBekInfo(OMPBHelper.convert(bekInfo));
+    }
+
+    if (!tags.isEmpty()) {
+      builder.addAllTags(KeyValueUtil.toProtobuf(tags));
     }
 
     return builder.build();
@@ -370,6 +405,10 @@ public final class OmBucketArgs extends WithMetadata implements Auditable {
     if (bucketArgs.hasBekInfo()) {
       builder.setBucketEncryptionKey(
           OMPBHelper.convert(bucketArgs.getBekInfo()));
+    }
+
+    if (!bucketArgs.getTagsList().isEmpty()) {
+      builder.setTags(KeyValueUtil.getFromProtobuf(bucketArgs.getTagsList()));
     }
 
     return builder;

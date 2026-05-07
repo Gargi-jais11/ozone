@@ -259,6 +259,7 @@ public final class OmUtils {
       // keeping it here for compatibility
     case GetSnapshotInfo:
     case GetObjectTagging:
+    case GetBucketTagging:
     case GetQuotaRepairStatus:
     case StartQuotaRepair:
       return true;
@@ -322,6 +323,8 @@ public final class OmUtils {
     case QuotaRepair:
     case PutObjectTagging:
     case DeleteObjectTagging:
+    case PutBucketTagging:
+    case DeleteBucketTagging:
     case UnknownCommand:
       return false;
     case EchoRPC:
@@ -376,6 +379,7 @@ public final class OmUtils {
     case GetKeyInfo:
     case GetSnapshotInfo:
     case GetObjectTagging:
+    case GetBucketTagging:
       return true;
     case CreateVolume:
     case SetVolumeProperty:
@@ -437,6 +441,8 @@ public final class OmUtils {
     case QuotaRepair:
     case PutObjectTagging:
     case DeleteObjectTagging:
+    case PutBucketTagging:
+    case DeleteBucketTagging:
     case ServiceList: // OM leader should have the most up-to-date OM service list info
     case RangerBGSync: // Ranger Background Sync task is only run on leader
     case SnapshotDiff:

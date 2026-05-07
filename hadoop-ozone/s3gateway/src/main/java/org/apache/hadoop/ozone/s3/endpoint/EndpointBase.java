@@ -37,7 +37,7 @@ import static org.apache.hadoop.ozone.s3.util.S3Consts.STORAGE_CLASS_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.STORAGE_CONFIG_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_KEY_LENGTH_LIMIT;
-import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_NUM_LIMIT;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_OBJECT_NUM_LIMIT;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_REGEX_PATTERN;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_VALUE_LENGTH_LIMIT;
 import static org.apache.hadoop.ozone.s3.util.S3Utils.hasMultiChunksPayload;
@@ -363,13 +363,21 @@ public abstract class EndpointBase {
 
     List<NameValuePair> tagPairs = URLEncodedUtils.parse(tagString, UTF_8);
 
-    return validateAndGetTagging(tagPairs, NameValuePair::getName, NameValuePair::getValue);
+    return validateAndGetTagging(tagPairs, NameValuePair::getName, NameValuePair::getValue,
+        TAG_OBJECT_NUM_LIMIT);
   }
 
+  /**
+   * Validates tag keys/values per S3 tagging rules.
+   *
+   * @param maxTagCount AWS object tagging allows 10 tags; bucket tagging allows 50.
+   * @see <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/tagging.html">S3 tagging</a>
+   */
   protected static <KV> Map<String, String> validateAndGetTagging(
       List<KV> tagList,
       Function<KV, String> getTagKey,
-      Function<KV, String> getTagValue
+      Function<KV, String> getTagValue,
+      int maxTagCount
   ) throws OS3Exception {
     final Map<String, String> tags = new HashMap<>();
     for (KV tagPair : tagList) {
@@ -421,7 +429,7 @@ public abstract class EndpointBase {
 
       final String previous = tags.put(tagKey, tagValue);
       if (previous != null) {
-        // Tags that are associated with an object must have unique tag keys
+        // Tags must have unique keys on the same resource (object or bucket)
         // Reject request if the same key is used twice on the same resource
         OS3Exception ex = S3ErrorTable.newError(INVALID_TAG, tagKey);
         ex.setErrorMessage("There are tags with duplicate tag keys, tag keys should be unique");
@@ -429,15 +437,23 @@ public abstract class EndpointBase {
       }
     }
 
-    if (tags.size() > TAG_NUM_LIMIT) {
-      // You can associate up to 10 tags with an object.
+    if (tags.size() > maxTagCount) {
       OS3Exception ex = S3ErrorTable.newError(INVALID_TAG, TAG_HEADER);
       ex.setErrorMessage("The number of tags " + tags.size() +
-          " exceeded the maximum number of tags of " + TAG_NUM_LIMIT);
+          " exceeded the maximum number of tags of " + maxTagCount);
       throw ex;
     }
 
     return Collections.unmodifiableMap(tags);
+  }
+
+  /** Object tagging: up to {@link org.apache.hadoop.ozone.s3.util.S3Consts#TAG_OBJECT_NUM_LIMIT} tags. */
+  protected static <KV> Map<String, String> validateAndGetTagging(
+      List<KV> tagList,
+      Function<KV, String> getTagKey,
+      Function<KV, String> getTagValue
+  ) throws OS3Exception {
+    return validateAndGetTagging(tagList, getTagKey, getTagValue, TAG_OBJECT_NUM_LIMIT);
   }
 
   protected AuditMessage.Builder auditMessageFor(AuditAction op) {

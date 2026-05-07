@@ -157,6 +157,9 @@ enum Type {
   GetObjectTagging = 141;
   DeleteObjectTagging = 142;
   SubmitSnapshotDiff = 143;
+  PutBucketTagging = 144;
+  GetBucketTagging = 145;
+  DeleteBucketTagging = 146;
 }
 
 enum SafeMode {
@@ -309,6 +312,9 @@ message OMRequest {
   repeated SetSnapshotPropertyRequest       SetSnapshotPropertyRequests    = 143;
 
   optional SubmitSnapshotDiffRequest        submitSnapshotDiffRequest       = 144;
+  optional PutBucketTaggingRequest          putBucketTaggingRequest         = 145;
+  optional GetBucketTaggingRequest          getBucketTaggingRequest          = 146;
+  optional DeleteBucketTaggingRequest       deleteBucketTaggingRequest       = 147;
 }
 
 message OMResponse {
@@ -444,6 +450,9 @@ message OMResponse {
   optional DeleteObjectTaggingResponse       deleteObjectTaggingResponse   = 142;
 
   optional SubmitSnapshotDiffResponse        submitSnapshotDiffResponse    = 143;
+  optional PutBucketTaggingResponse          putBucketTaggingResponse      = 144;
+  optional GetBucketTaggingResponse          getBucketTaggingResponse      = 145;
+  optional DeleteBucketTaggingResponse       deleteBucketTaggingResponse    = 146;
 }
 
 enum Status {
@@ -787,6 +796,7 @@ message BucketInfo {
     optional hadoop.hdds.DefaultReplicationConfig defaultReplicationConfig = 20;
     optional uint64 snapshotUsedBytes = 21;
     optional uint64 snapshotUsedNamespace = 22;
+    repeated hadoop.hdds.KeyValue tags = 23;
 }
 
 enum BucketLayoutProto {
@@ -860,6 +870,7 @@ message BucketArgs {
     optional string ownerName = 10;
     optional hadoop.hdds.DefaultReplicationConfig defaultReplicationConfig = 11;
     optional BucketEncryptionInfoProto bekInfo = 12;
+    repeated hadoop.hdds.KeyValue tags = 13;
 }
 
 message PrefixInfo {
@@ -2405,6 +2416,30 @@ message DeleteObjectTaggingRequest {
 }
 
 message DeleteObjectTaggingResponse {
+}
+
+message PutBucketTaggingRequest {
+  required BucketArgs bucketArgs = 1;
+  optional uint64 modificationTime = 2;
+}
+
+message PutBucketTaggingResponse {
+}
+
+message GetBucketTaggingRequest {
+  required BucketArgs bucketArgs = 1;
+}
+
+message GetBucketTaggingResponse {
+  repeated hadoop.hdds.KeyValue tags = 1;
+}
+
+message DeleteBucketTaggingRequest {
+  required BucketArgs bucketArgs = 1;
+  optional uint64 modificationTime = 2;
+}
+
+message DeleteBucketTaggingResponse {
 }
 
 enum ReadConsistencyProto {

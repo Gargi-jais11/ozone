@@ -5659,6 +5659,89 @@ abstract class OzoneRpcClientTests extends OzoneTestBase {
     assertThat(tagsRetrieved).containsAllEntriesOf(tags);
   }
 
+  @ParameterizedTest
+  @MethodSource("bucketLayouts")
+  public void testPutBucketTagging(BucketLayout bucketLayout) throws Exception {
+    String volumeName = UUID.randomUUID().toString();
+    String bucketName = UUID.randomUUID().toString();
+
+    store.createVolume(volumeName);
+    OzoneVolume volume = store.getVolume(volumeName);
+    BucketArgs bucketArgs =
+        BucketArgs.newBuilder().setBucketLayout(bucketLayout).build();
+    volume.createBucket(bucketName, bucketArgs);
+    OzoneBucket bucket = volume.getBucket(bucketName);
+
+    assertThat(bucket.getBucketTagging()).isEmpty();
+
+    Map<String, String> tags = new HashMap<>();
+    tags.put("tag-key-1", "tag-value-1");
+    tags.put("tag-key-2", "tag-value-2");
+
+    bucket.putBucketTagging(tags);
+
+    Map<String, String> stored = bucket.getBucketTagging();
+    assertEquals(tags.size(), stored.size());
+    assertThat(stored).containsAllEntriesOf(tags);
+
+    Map<String, String> secondTags = new HashMap<>();
+    secondTags.put("tag-key-3", "tag-value-3");
+
+    bucket.putBucketTagging(secondTags);
+
+    stored = bucket.getBucketTagging();
+    assertEquals(secondTags.size(), stored.size());
+    assertThat(stored).containsAllEntriesOf(secondTags);
+    assertThat(stored).doesNotContainKeys("tag-key-1", "tag-key-2");
+  }
+
+  @ParameterizedTest
+  @MethodSource("bucketLayouts")
+  public void testGetBucketTagging(BucketLayout bucketLayout) throws Exception {
+    String volumeName = UUID.randomUUID().toString();
+    String bucketName = UUID.randomUUID().toString();
+
+    store.createVolume(volumeName);
+    OzoneVolume volume = store.getVolume(volumeName);
+    BucketArgs bucketArgs =
+        BucketArgs.newBuilder().setBucketLayout(bucketLayout).build();
+    volume.createBucket(bucketName, bucketArgs);
+    OzoneBucket bucket = volume.getBucket(bucketName);
+
+    Map<String, String> tags = new HashMap<>();
+    tags.put("tag-key-1", "tag-value-1");
+    tags.put("tag-key-2", "tag-value-2");
+
+    bucket.putBucketTagging(tags);
+
+    Map<String, String> retrieved = bucket.getBucketTagging();
+    assertEquals(tags.size(), retrieved.size());
+    assertThat(retrieved).containsAllEntriesOf(tags);
+  }
+
+  @ParameterizedTest
+  @MethodSource("bucketLayouts")
+  public void testDeleteBucketTagging(BucketLayout bucketLayout) throws Exception {
+    String volumeName = UUID.randomUUID().toString();
+    String bucketName = UUID.randomUUID().toString();
+
+    store.createVolume(volumeName);
+    OzoneVolume volume = store.getVolume(volumeName);
+    BucketArgs bucketArgs =
+        BucketArgs.newBuilder().setBucketLayout(bucketLayout).build();
+    volume.createBucket(bucketName, bucketArgs);
+    OzoneBucket bucket = volume.getBucket(bucketName);
+
+    Map<String, String> tags = new HashMap<>();
+    tags.put("tag-key-1", "tag-value-1");
+    bucket.putBucketTagging(tags);
+    assertFalse(bucket.getBucketTagging().isEmpty());
+
+    bucket.deleteBucketTagging();
+
+    assertThat(bucket.getBucketTagging()).isEmpty();
+  }
+
   @Test
   public void testCreateEmptyKeySkipBlockAllocation()
       throws Exception {

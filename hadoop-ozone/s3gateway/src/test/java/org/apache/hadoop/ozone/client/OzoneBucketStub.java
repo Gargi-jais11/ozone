@@ -74,6 +74,8 @@ public final class OzoneBucketStub extends OzoneBucket {
 
   private Map<String, OzoneKeyDetails> keyDetails = new HashMap<>();
 
+  private final Map<String, String> bucketTags = new HashMap<>();
+
   private Map<String, byte[]> keyContents = new HashMap<>();
 
   private Map<String, MultipartInfoStub> keyToMultipartUpload = new HashMap<>();
@@ -724,6 +726,22 @@ public final class OzoneBucketStub extends OzoneBucket {
     } else {
       throw new OMException(ResultCodes.KEY_NOT_FOUND);
     }
+  }
+
+  @Override
+  public Map<String, String> getBucketTagging() throws IOException {
+    return Collections.unmodifiableMap(new HashMap<>(bucketTags));
+  }
+
+  @Override
+  public void putBucketTagging(Map<String, String> tags) throws IOException {
+    bucketTags.clear();
+    bucketTags.putAll(tags);
+  }
+
+  @Override
+  public void deleteBucketTagging() throws IOException {
+    bucketTags.clear();
   }
 
   /**

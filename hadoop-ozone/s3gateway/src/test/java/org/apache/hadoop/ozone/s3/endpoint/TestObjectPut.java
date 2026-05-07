@@ -35,7 +35,7 @@ import static org.apache.hadoop.ozone.s3.util.S3Consts.STREAMING_AWS4_HMAC_SHA25
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_DIRECTIVE_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_KEY_LENGTH_LIMIT;
-import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_NUM_LIMIT;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_OBJECT_NUM_LIMIT;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_VALUE_LENGTH_LIMIT;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.X_AMZ_CONTENT_SHA256;
 import static org.apache.hadoop.ozone.s3.util.S3Utils.parseETag;
@@ -211,9 +211,9 @@ class TestObjectPut {
   @Test
   public void testPutObjectWithTooManyTags() {
     StringBuilder sb = new StringBuilder();
-    for (int i = 0; i < TAG_NUM_LIMIT + 1; i++) {
+    for (int i = 0; i < TAG_OBJECT_NUM_LIMIT + 1; i++) {
       sb.append(String.format("tag%d=value%d", i, i));
-      if (i < TAG_NUM_LIMIT) {
+      if (i < TAG_OBJECT_NUM_LIMIT) {
         sb.append('&');
       }
     }

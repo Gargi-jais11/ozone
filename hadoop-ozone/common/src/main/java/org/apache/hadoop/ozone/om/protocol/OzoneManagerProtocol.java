@@ -1196,6 +1196,12 @@ public interface OzoneManagerProtocol
   Map<String, String> getObjectTagging(OmKeyArgs args) throws IOException;
 
   /**
+   * Gets the tags for the specified bucket.
+   */
+  @Override
+  Map<String, String> getBucketTagging(OmBucketArgs args) throws IOException;
+
+  /**
    * Sets the tags to an existing key.
    * @param args Key args
    */
@@ -1209,6 +1215,16 @@ public interface OzoneManagerProtocol
    * @param args Key args
    */
   default void deleteObjectTagging(OmKeyArgs args) throws IOException {
+    throw new UnsupportedOperationException("OzoneManager does not require " +
+        "this to be implemented, as write requests use a new approach.");
+  }
+
+  default void putBucketTagging(OmBucketArgs args) throws IOException {
+    throw new UnsupportedOperationException("OzoneManager does not require " +
+        "this to be implemented, as write requests use a new approach.");
+  }
+
+  default void deleteBucketTagging(OmBucketArgs args) throws IOException {
     throw new UnsupportedOperationException("OzoneManager does not require " +
         "this to be implemented, as write requests use a new approach.");
   }

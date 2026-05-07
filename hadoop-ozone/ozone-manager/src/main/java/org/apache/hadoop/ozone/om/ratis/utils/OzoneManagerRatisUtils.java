@@ -67,6 +67,8 @@ import org.apache.hadoop.ozone.om.request.s3.multipart.S3ExpiredMultipartUploads
 import org.apache.hadoop.ozone.om.request.s3.security.OMSetSecretRequest;
 import org.apache.hadoop.ozone.om.request.s3.security.S3GetSecretRequest;
 import org.apache.hadoop.ozone.om.request.s3.security.S3RevokeSecretRequest;
+import org.apache.hadoop.ozone.om.request.s3.tagging.S3DeleteBucketTaggingRequest;
+import org.apache.hadoop.ozone.om.request.s3.tagging.S3PutBucketTaggingRequest;
 import org.apache.hadoop.ozone.om.request.s3.tenant.OMSetRangerServiceVersionRequest;
 import org.apache.hadoop.ozone.om.request.s3.tenant.OMTenantAssignAdminRequest;
 import org.apache.hadoop.ozone.om.request.s3.tenant.OMTenantAssignUserAccessIdRequest;
@@ -171,6 +173,10 @@ public final class OzoneManagerRatisUtils {
       } else {
         return new OMBucketSetPropertyRequest(omRequest);
       }
+    case PutBucketTagging:
+      return new S3PutBucketTaggingRequest(omRequest);
+    case DeleteBucketTagging:
+      return new S3DeleteBucketTaggingRequest(omRequest);
     case AddAcl:
     case RemoveAcl:
     case SetAcl:

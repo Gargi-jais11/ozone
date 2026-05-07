@@ -112,6 +112,7 @@ public class OMMetrics implements OmMetadataReaderMetrics {
   private @Metric MutableCounterLong numGetKeyInfo;
 
   private @Metric MutableCounterLong numGetObjectTagging;
+  private @Metric MutableCounterLong numGetBucketTagging;
   private @Metric MutableCounterLong numPutObjectTagging;
   private @Metric MutableCounterLong numDeleteObjectTagging;
 
@@ -205,6 +206,7 @@ public class OMMetrics implements OmMetadataReaderMetrics {
   private @Metric MutableCounterLong getNumGetKeyInfoFails;
 
   private @Metric MutableCounterLong numGetObjectTaggingFails;
+  private @Metric MutableCounterLong numGetBucketTaggingFails;
   private @Metric MutableCounterLong numPutObjectTaggingFails;
   private @Metric MutableCounterLong numDeleteObjectTaggingFails;
 
@@ -982,6 +984,16 @@ public class OMMetrics implements OmMetadataReaderMetrics {
   @Override
   public void incNumGetObjectTaggingFails() {
     numGetObjectTaggingFails.incr();
+  }
+
+  @Override
+  public void incNumGetBucketTagging() {
+    numGetBucketTagging.incr();
+  }
+
+  @Override
+  public void incNumGetBucketTaggingFails() {
+    numGetBucketTaggingFails.incr();
   }
 
   public void incNumPutObjectTagging() {

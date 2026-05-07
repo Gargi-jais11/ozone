@@ -26,11 +26,14 @@ import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.assertStatus
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.assertSucceeds;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.completeMultipartUpload;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.delete;
+import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.deleteBucketTagging;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.deleteTagging;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.get;
+import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.getBucketTagging;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.getTagging;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.listParts;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.put;
+import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.putBucketTagging;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.putTagging;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.BUCKET_ALREADY_EXISTS;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.COPY_SOURCE_HEADER;
@@ -563,6 +566,74 @@ public class TestS3GatewayMetrics {
     assertErrorResponse(S3ErrorTable.NO_SUCH_KEY, () -> deleteTagging(keyEndpoint, bucketName, "nonexistent"));
 
     long curMetric = metrics.getDeleteObjectTaggingFailure();
+    assertEquals(1L, curMetric - oriMetric);
+  }
+
+  @Test
+  public void testPutBucketTaggingSuccess() throws Exception {
+    long oriMetric = metrics.getPutBucketTaggingSuccess();
+    assertStatus(HttpStatus.SC_OK,
+        () -> putBucketTagging(bucketEndpoint, bucketName, getPutTaggingBody()));
+
+    long curMetric = metrics.getPutBucketTaggingSuccess();
+    assertEquals(1L, curMetric - oriMetric);
+  }
+
+  @Test
+  public void testPutBucketTaggingFailure() {
+    long oriMetric = metrics.getPutBucketTaggingFailure();
+
+    assertErrorResponse(S3ErrorTable.MALFORMED_XML,
+        () -> putBucketTagging(bucketEndpoint, bucketName, "not-valid-xml"));
+
+    long curMetric = metrics.getPutBucketTaggingFailure();
+    assertEquals(1L, curMetric - oriMetric);
+  }
+
+  @Test
+  public void testGetBucketTaggingSuccess() throws Exception {
+    assertStatus(HttpStatus.SC_OK,
+        () -> putBucketTagging(bucketEndpoint, bucketName, getPutTaggingBody()));
+
+    long oriMetric = metrics.getGetBucketTaggingSuccess();
+    assertSucceeds(() -> getBucketTagging(bucketEndpoint, bucketName));
+
+    long curMetric = metrics.getGetBucketTaggingSuccess();
+    assertEquals(1L, curMetric - oriMetric);
+  }
+
+  @Test
+  public void testGetBucketTaggingFailure() {
+    long oriMetric = metrics.getGetBucketTaggingFailure();
+
+    assertErrorResponse(S3ErrorTable.NO_SUCH_TAG_SET,
+        () -> getBucketTagging(bucketEndpoint, bucketName));
+
+    long curMetric = metrics.getGetBucketTaggingFailure();
+    assertEquals(1L, curMetric - oriMetric);
+  }
+
+  @Test
+  public void testDeleteBucketTaggingSuccess() throws Exception {
+    assertStatus(HttpStatus.SC_OK,
+        () -> putBucketTagging(bucketEndpoint, bucketName, getPutTaggingBody()));
+
+    long oriMetric = metrics.getDeleteBucketTaggingSuccess();
+    assertStatus(HttpStatus.SC_NO_CONTENT,
+        () -> deleteBucketTagging(bucketEndpoint, bucketName));
+
+    long curMetric = metrics.getDeleteBucketTaggingSuccess();
+    assertEquals(1L, curMetric - oriMetric);
+  }
+
+  @Test
+  public void testDeleteBucketTaggingFailure() {
+    long oriMetric = metrics.getDeleteBucketTaggingFailure();
+
+    assertErrorResponse(S3ErrorTable.NO_SUCH_BUCKET,
+        () -> deleteBucketTagging(bucketEndpoint, "nonexistent-bucket"));
+
+    long curMetric = metrics.getDeleteBucketTaggingFailure();
     assertEquals(1L, curMetric - oriMetric);
   }
 

@@ -257,6 +257,7 @@ import org.apache.hadoop.ozone.om.helpers.ListKeysLightResult;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.ListOpenFilesResult;
 import org.apache.hadoop.ozone.om.helpers.OMNodeDetails;
+import org.apache.hadoop.ozone.om.helpers.OmBucketArgs;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmDBAccessIdInfo;
 import org.apache.hadoop.ozone.om.helpers.OmDBTenantState;
@@ -3057,6 +3058,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
             .setUsedNamespace(realBucket.getUsedNamespace())
             .addAllMetadata(realBucket.getMetadata())
             .setBucketLayout(realBucket.getBucketLayout())
+            .setTags(realBucket.getTags())
             .build();
       }
       // If no real bucket exists, return the requested one's info.
@@ -5185,6 +5187,15 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
       throws IOException {
     try (UncheckedAutoCloseableSupplier<IOmMetadataReader> rcReader = getReader(args)) {
       return rcReader.get().getObjectTagging(args);
+    }
+  }
+
+  @Override
+  public Map<String, String> getBucketTagging(final OmBucketArgs args)
+      throws IOException {
+    try (UncheckedAutoCloseableSupplier<IOmMetadataReader> rcReader =
+             getReader(args.getVolumeName(), args.getBucketName(), "")) {
+      return rcReader.get().getBucketTagging(args);
     }
   }
 
