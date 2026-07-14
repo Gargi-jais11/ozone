@@ -22,6 +22,7 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
@@ -35,8 +36,18 @@ public final class JniLibNamePropertyWriter {
 
   public static void main(String[] args) {
     String filePath = args[0];
+    Path path = Paths.get(filePath);
+    Path parent = path.getParent();
+    try {
+      if (parent != null) {
+        Files.createDirectories(parent);
+      }
+    } catch (IOException e) {
+      e.printStackTrace();
+      return;
+    }
     try (Writer writer = new OutputStreamWriter(
-        Files.newOutputStream(Paths.get(filePath)), StandardCharsets.UTF_8)) {
+        Files.newOutputStream(path), StandardCharsets.UTF_8)) {
       String libName = ManagedRocksObjectUtils.getRocksDBLibFileName();
       writer.write("rocksdbLibName=" + libName);
     } catch (IOException e) {
