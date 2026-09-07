@@ -16,21 +16,7 @@
  * limitations under the License.
  */
 
-interface IBreadcrumbNameMap {
-  [path: string]: string;
-}
-
-export const breadcrumbNameMap: IBreadcrumbNameMap = {
-  '/Overview': 'Overview',
-  '/Volumes': 'Volumes',
-  '/Buckets': 'Buckets',
-  '/Datanodes': 'Datanodes',
-  '/Pipelines': 'Pipelines',
-  '/MissingContainers': 'Missing Containers',
-  '/Containers': 'Containers',
-  '/Insights': 'Insights',
-  '/NamespaceUsage': 'Namespace Usage',
-  '/Heatmap': 'Heatmap',
-  '/Om': 'Om',
-  '/Alerts': 'Alerts'
-};
+// Base URL of the recon-rag-service prototype container (see the
+// rag-service.yaml compose add-on). Change this if the service is published
+// on a different host/port than the compose default.
+export const RAG_SERVICE_BASE_URL = 'http://localhost:8642';

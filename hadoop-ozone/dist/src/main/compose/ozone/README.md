@@ -16,10 +16,15 @@
 
 This directory contains a docker-compose definition for an Ozone cluster with all components (including S3 Gateway and Recon).
 
-There are two optional add-ons:
+There are three optional add-ons:
 
  * monitoring: adds Grafana, Jaeger and Prometheus services, and configures Ozone to work with them
  * profiling: allows sampling Ozone CPU/memory using [async-profiler](https://github.com/jvm-profiling-tools/async-profiler)
+ * rag-service: adds the `recon-rag-service` prototype (see
+   [`recon-rag-service/README.md`](recon-rag-service/README.md)), a pluggable
+   RAG pipeline for diagnosing Ozone alerts and proposing dry-run-only fixes.
+   Requires the monitoring add-on as well, since it reads alerts via
+   Recon's Prometheus proxy.
 
 ## How to start
 
@@ -55,6 +60,7 @@ Monitoring and/or performance add-ons can be enabled via docker-compose's abilit
 export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml                # => add monitoring
 export COMPOSE_FILE=docker-compose.yaml:profiling.yaml                 # => add profiling
 export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml:profiling.yaml # => add both
+export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml:rag-service.yaml # => add the RAG diagnosis service (needs monitoring)
 ```
 
 Once the variable is defined, Ozone cluster with add-ons can be started/scaled/stopped etc. using the same `docker-compose` commands as for the base cluster.
@@ -99,3 +105,13 @@ SCM: http://localhost:9876
 ### Profiling
 
 Start by hitting the `/prof` endpoint on the service to be profiled, eg. http://localhost:9876/prof for SCM.  [Detailed instructions](https://cwiki.apache.org/confluence/display/HADOOP/Java+Profiling+of+Ozone) can be found in the Hadoop wiki.
+
+### RAG diagnosis service (prototype)
+
+With the `rag-service` add-on enabled (in addition to `monitoring`), the
+`recon-rag-service` container is available at http://localhost:8642 (see
+[`recon-rag-service/README.md`](recon-rag-service/README.md) for its API and
+architecture) and a new "Alerts" page appears in the Recon UI at
+http://localhost:9888, listing active Prometheus alerts with "Diagnose" and
+"Fix" buttons. This is a personal prototype: remediation is diagnosis +
+dry-run only and never mutates the cluster.

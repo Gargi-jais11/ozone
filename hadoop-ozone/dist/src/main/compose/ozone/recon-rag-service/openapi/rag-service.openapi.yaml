@@ -1,0 +1,204 @@
+openapi: 3.0.3
+info:
+  title: Ozone Recon RAG Diagnosis Service
+  description: >
+    Pluggable RAG pipeline for diagnosing Ozone cluster alerts and proposing
+    dry-run-only remediations. This is a personal prototype, not an ASF
+    contribution.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8642
+paths:
+  /api/v1/health:
+    get:
+      summary: Liveness check
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /api/v1/plugins:
+    get:
+      summary: List registered alert-diagnostic plugins
+      responses:
+        "200":
+          description: Known alert types.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plugins:
+                    type: array
+                    items:
+                      type: string
+                    example: [OzoneDeletionNotProgressing]
+  /api/v1/diagnose:
+    post:
+      summary: Diagnose a Prometheus alert
+      description: >
+        Looks up the plugin registered for `labels.alertname`, collects
+        JMX/config evidence from the live cluster, retrieves relevant
+        knowledge-base excerpts, and returns a generated diagnosis.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertPayload"
+      responses:
+        "200":
+          description: Diagnosis produced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagnosisResponse"
+        "404":
+          description: No plugin registered for this alert's `alertname`.
+  /api/v1/remediate:
+    post:
+      summary: Validate a remediation action and return a dry-run plan
+      description: >
+        Never mutates the cluster. `dryRun=false` is rejected with 501 in
+        this build; only dry-run validation/planning is implemented.
+      parameters:
+        - in: query
+          name: dryRun
+          schema:
+            type: boolean
+            default: true
+          description: Must be true; live execution is not implemented in this build.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemediationRequest"
+      responses:
+        "200":
+          description: Dry-run remediation plan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemediationPlan"
+        "400":
+          description: action_id is not in the plugin's permitted-actions allowlist.
+        "404":
+          description: No plugin registered for this alert's `alertname`.
+        "501":
+          description: dryRun=false was requested; live execution is not implemented.
+components:
+  schemas:
+    AlertPayload:
+      type: object
+      description: Mirrors one entry of Prometheus's `/api/v1/alerts` response.
+      properties:
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          example: { alertname: OzoneDeletionNotProgressing, severity: warning }
+        annotations:
+          type: object
+          additionalProperties:
+            type: string
+        state:
+          type: string
+          example: firing
+        activeAt:
+          type: string
+          format: date-time
+    ActionSpec:
+      type: object
+      properties:
+        action_id:
+          type: string
+        description:
+          type: string
+        config_property:
+          type: string
+          nullable: true
+        risk:
+          type: string
+          example: medium
+        requires_restart:
+          type: boolean
+    RetrievedDocument:
+      type: object
+      properties:
+        source:
+          type: string
+        snippet:
+          type: string
+        score:
+          type: number
+          format: float
+    RecommendedFix:
+      type: object
+      properties:
+        action_id:
+          type: string
+        summary:
+          type: string
+        config_changes:
+          type: object
+          additionalProperties:
+            type: string
+        rationale:
+          type: string
+    DiagnosisResponse:
+      type: object
+      properties:
+        alert_type:
+          type: string
+        diagnosis:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        recommended_fix:
+          $ref: "#/components/schemas/RecommendedFix"
+          nullable: true
+        retrieved_documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievedDocument"
+    RemediationRequest:
+      type: object
+      required: [alert, action_id]
+      properties:
+        alert:
+          $ref: "#/components/schemas/AlertPayload"
+        action_id:
+          type: string
+    RemediationPlan:
+      type: object
+      properties:
+        action_id:
+          type: string
+        description:
+          type: string
+        config_changes:
+          type: object
+          additionalProperties:
+            type: string
+        requires_restart:
+          type: boolean
+        risk:
+          type: string
+        dry_run:
+          type: boolean
+        applied:
+          type: boolean
+          description: Always false in this build.
+        warnings:
+          type: array
+          items:
+            type: string

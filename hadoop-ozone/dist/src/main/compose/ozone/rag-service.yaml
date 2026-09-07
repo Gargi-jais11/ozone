@@ -1,0 +1,39 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Adds the recon-rag-service prototype (see recon-rag-service/README.md) to
+# the cluster. Combine with monitoring.yaml so Prometheus is actually running:
+#   export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml:rag-service.yaml
+#   ./run.sh -d
+
+services:
+  recon-rag:
+    build:
+      context: ./recon-rag-service
+    hostname: recon-rag
+    ports:
+      - 8642:8642
+    environment:
+      - OM_HTTP_ADDRESS=om:9874
+      - SCM_HTTP_ADDRESS=scm:9876
+      - RECON_HTTP_ADDRESS=recon:9888
+    depends_on:
+      - om
+      - scm
+      - recon
+  recon:
+    environment:
+      - "OZONE-SITE.XML_ozone.recon.prometheus.http.endpoint=http://prometheus:9090"

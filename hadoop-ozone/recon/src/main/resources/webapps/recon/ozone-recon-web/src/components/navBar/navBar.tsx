@@ -20,6 +20,7 @@ import React from 'react';
 import axios from 'axios';
 import {Layout, Menu} from 'antd';
 import {
+  AlertOutlined,
   BarChartOutlined,
   ClusterOutlined,
   ContainerOutlined,
@@ -159,6 +160,12 @@ class NavBar extends React.Component<INavBarProps> {
             />
           </Menu.Item></>
         : <></>
+    ), (
+      <Menu.Item key='/Alerts'
+        icon={<AlertOutlined />}>
+        <span>Alerts</span>
+        <Link to='/Alerts' />
+      </Menu.Item>
     )]
     return (
       <Sider
