@@ -95,6 +95,13 @@ public class ReconDBDefinition extends DBDefinition.WithMap {
           StringCodec.get(),
           GlobalStatsValue.getCodec());
 
+  public static final DBColumnFamilyDefinition<String, String>
+      AIOPS_ALERTS =
+      new DBColumnFamilyDefinition<>(
+          "aiopsAlertsTable",
+          StringCodec.get(),
+          StringCodec.get());
+
   private static final Map<String, DBColumnFamilyDefinition<?, ?>>
       COLUMN_FAMILIES = DBColumnFamilyDefinition.newUnmodifiableMap(
           CONTAINER_KEY,
@@ -104,7 +111,8 @@ public class ReconDBDefinition extends DBDefinition.WithMap {
           REPLICA_HISTORY,
           REPLICA_HISTORY_V2,
           FILE_COUNT_BY_SIZE,
-          GLOBAL_STATS);
+          GLOBAL_STATS,
+          AIOPS_ALERTS);
 
   public ReconDBDefinition(String dbName) {
     super(COLUMN_FAMILIES);

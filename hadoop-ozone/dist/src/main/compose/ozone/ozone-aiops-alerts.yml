@@ -1,0 +1,41 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Prometheus alerting rules for the recon-rag-service prototype (see
+# recon-rag-service/README.md). Recon's Alerts page reads active alerts
+# straight from Prometheus's own /api/v1/alerts, so these rules are the only
+# thing that makes an alert exist -- there is no Alertmanager in this build.
+#
+# alertname must match app/plugins/*.py's `alert_type` exactly, since that is
+# how recon-rag-service picks which plugin diagnoses the alert.
+groups:
+  - name: ozone-aiops-alerts
+    rules:
+      - alert: OzoneDeletionNotProgressing
+        expr: >-
+          rate(deleting_service_metrics_num_keys_purged[10m]) == 0
+          and
+          deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
+        for: 5m
+        labels:
+          severity: warning
+          component: om
+        annotations:
+          summary: "Ozone Manager key deletion is not progressing"
+          description: >-
+            KeyDeletingService has keys queued for purge
+            (numKeysProcessed > numKeysPurged) but the purge rate has been
+            zero for 5 minutes.

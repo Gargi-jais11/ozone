@@ -19,6 +19,7 @@
 import React, {useEffect} from 'react';
 import {Layout, Menu} from 'antd';
 import {
+  AlertOutlined,
   BarChartOutlined,
   ClusterOutlined,
   ContainerOutlined,
@@ -150,7 +151,13 @@ const NavBar: React.FC<NavBarProps> = ({
       }}
       />
     </Menu.Item>
-  ),(
+  ), (
+    <Menu.Item key='/Alerts'
+      icon={<AlertOutlined />}>
+      <span>Alerts</span>
+      <Link to='/Alerts' />
+    </Menu.Item>
+  ), (
     isChatbotEnabled &&
     <Menu.Item key='/Assistant'
       icon={<ThunderboltOutlined />}>

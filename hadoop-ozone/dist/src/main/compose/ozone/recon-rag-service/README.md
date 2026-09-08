@@ -36,19 +36,30 @@ Jira ID or OEP is associated with it.
   ever returns a plan describing what a fix *would* change. `dryRun=false`
   is rejected with HTTP 501 in this build.
 
-## Architecture
+## End-to-end alert flow (Alertmanager integration)
+
+The compose cluster wires Prometheus, Alertmanager, Recon, and this service
+together. **The browser only talks to Recon**; Recon calls this Python service
+server-side.
 
 ```
- Prometheus (dev-cluster monitoring.yaml add-on)
-      |  fires alert
+ Prometheus (ozone-aiops-alerts.yml rules)
+      |  evaluates metrics, fires alert
       v
- Ozone Recon UI --GET /api/v1/metrics/alerts--> Recon backend --> Prometheus /api/v1/alerts
-      |   (existing generic MetricsProxyEndpoint, no Recon backend change)
+ Alertmanager (alertmanager.yml)
+      |  POST webhook (Alertmanager payload)
+      v
+ Recon  POST /api/v1/aiops/webhook
+      |  upsert by fingerprint -> RocksDB (aiopsAlertsTable)
       |
-      |   new "Alerts" page lists active alerts, "Diagnose"/"Fix" buttons per row
+ Recon UI  GET /api/v1/aiops/alerts
+      |  lists persisted alerts (not a live Prometheus poll)
       |
-      |   POST http://<host>:8642/api/v1/diagnose   (direct browser -> this
-      v    container; published port, CORS-enabled)
+      |  "Diagnose" -> POST /api/v1/aiops/alerts/{id}/diagnose
+      v
+ Recon (Java RagServiceClient)
+      |  POST http://recon-rag:8642/api/v1/diagnose
+      v
  recon-rag-service (this container, port 8642)
       |
       +-- PluginRegistry: labels.alertname -> AlertDiagnosticPlugin
@@ -56,11 +67,104 @@ Jira ID or OEP is associated with it.
       +-- RagPipeline: VectorStore.query(retrieval_query) + LLMClient.generate(prompt)
       +-- DiagnosisResponse{ diagnosis, evidence, recommended_fix }
       |
-      |   "Fix" button -> POST /api/v1/remediate?dryRun=true
+      |  "Fix" -> POST /api/v1/aiops/alerts/{id}/remediate?dryRun=true&actionId=...
+      v
+ Recon (Java RagServiceClient)
+      |  POST http://recon-rag:8642/api/v1/remediate?dryRun=true
       v
  RemediationExecutor: validates action_id against plugin.permitted_actions(),
- returns a RemediationPlan describing the change. Never calls the cluster.
+ returns a RemediationPlan describing the change. Never calls the cluster.(never applies to cluster)
 ```
+
+### What changed vs. the original browser-direct prototype
+
+| Layer | Before | Now |
+|---|---|---|
+| Alert source | Recon UI polled Prometheus `/api/v1/alerts` | Alertmanager webhook -> Recon `/api/v1/aiops/webhook` -> RocksDB |
+| Alert listing | `GET /api/v1/metrics/alerts` (MetricsProxy) | `GET /api/v1/aiops/alerts` |
+| Diagnose / Fix | Browser -> `:8642` directly (CORS) | Browser -> Recon -> `:8642` |
+| This Python service | Same plugin/RAG/remediation code | **Unchanged internally**; only the caller moved to Recon |
+
+Priyesh: your `app/plugins/*`, `app/rag/*`, and `/api/v1/diagnose` +
+`/api/v1/remediate` contracts stay the same. Recon's `RagServiceClient` forwards
+Prometheus-shaped alert JSON to those endpoints.
+
+### Compose files involved
+
+```bash
+export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml:rag-service.yaml
+./run.sh -d
+```
+
+| File | Role |
+|---|---|
+| `monitoring.yaml` | Prometheus + Alertmanager services |
+| `prometheus.yml` | Scrapes OM/SCM/DN; loads `ozone-aiops-alerts.yml`; sends alerts to Alertmanager |
+| `ozone-aiops-alerts.yml` | Rule `OzoneDeletionNotProgressing` (first shipped alert) |
+| `alertmanager.yml` | Webhook receiver -> `http://recon:9888/api/v1/aiops/webhook` |
+| `rag-service.yaml` | Builds `recon-rag` container; sets `ozone.recon.aiops.*` on Recon |
+
+Recon env (from `rag-service.yaml`):
+
+- `ozone.recon.aiops.enabled=true`
+- `ozone.recon.aiops.rag-service.endpoint=http://recon-rag:8642`
+
+### Recon AIOps REST API (Java gateway)
+
+Base path: `/api/v1/aiops`
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/webhook` | Alertmanager ingestion (also usable for manual test payloads) |
+| `GET` | `/alerts` | List alerts stored in RocksDB |
+| `POST` | `/alerts/{id}/diagnose` | Forward alert to this service's `/api/v1/diagnose` |
+| `POST` | `/alerts/{id}/remediate?dryRun=true&actionId=...` | Forward to `/api/v1/remediate` |
+
+### Recon UI
+
+Open **http://localhost:9888/#/Alerts** (HashRouter). The Alerts page appears in
+the left nav on both New UI and Old UI.
+
+Rebuild Recon UI after frontend changes (do **not** pass `-DskipRecon`):
+
+```bash
+mvn clean install -Pdist -DskipTests -DskipShade -DskipDocs
+cd hadoop-ozone/dist/target/ozone-*-SNAPSHOT/compose/ozone
+export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml:rag-service.yaml
+./run.sh -d
+```
+
+### Manual curl checks (from the host)
+
+```bash
+# List persisted alerts (use id from response for diagnose/remediate)
+curl -s http://localhost:9888/api/v1/aiops/alerts | python3 -m json.tool
+
+ALERT_ID=<id-from-above>
+curl -s -X POST "http://localhost:9888/api/v1/aiops/alerts/${ALERT_ID}/diagnose" \
+  | python3 -m json.tool
+
+curl -s -X POST \
+  "http://localhost:9888/api/v1/aiops/alerts/${ALERT_ID}/remediate?dryRun=true&actionId=increase_key_deleting_limit_per_task" \
+  | python3 -m json.tool
+```
+
+Direct calls to this service (bypassing Recon) still work for local debugging:
+
+```bash
+curl -s http://localhost:8642/api/v1/health
+curl -s http://localhost:8642/api/v1/plugins
+```
+
+### Known limitations
+
+- **`config_client.py` expects JSON from `GET om:9874/conf?format=json`, but OM
+  returns XML** in this cluster. Diagnose/remediate still run but may warn
+  `"Could not read the current value from the cluster"` and assume
+  `ozone-default.xml` defaults. Fix: parse XML in `config_client.py` or rely on
+  JMX-only evidence.
+- **Live remediation (`dryRun=false`)** is not implemented (HTTP 501).
+- **Only one alert plugin** ships today: `OzoneDeletionNotProgressing`.
 
 ## Pluggable architecture
 
@@ -151,11 +255,13 @@ See the `rag-service.yaml` add-on and its section in the compose
 - [x] Phase 2: RAG pipeline with swappable vector store / LLM, mock defaults.
 - [x] Phase 3: dry-run-only remediation executor and REST API.
 - [x] Phase 4: docker-compose add-on wiring and a minimal Recon UI page.
+- [x] Phase 5: Alertmanager webhook -> Recon RocksDB persistence; Recon as
+      Java gateway to this service (browser no longer calls `:8642` directly).
 - [ ] Deferred: live remediation execution (`dryRun=false`) against a real
       cluster, gated behind explicit operator opt-in and an audit trail.
 - [ ] Deferred: additional plugins beyond `DeletionNotProgressing` (the
       ABC/registry already generalize to this).
 - [ ] Deferred: a curated, larger knowledge base beyond the two illustrative
       runbook documents shipped here.
-- [ ] Deferred: server-side configuration of the RAG service base URL for the
-      Recon UI (currently a frontend constant, fine for a local prototype).
+- [ ] Deferred: fix OM `/conf` XML parsing in `config_client.py` so diagnose
+      and remediate plans use live config values.

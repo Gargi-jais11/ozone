@@ -41,6 +41,7 @@ import org.apache.hadoop.ozone.om.protocol.OzoneManagerProtocol;
 import org.apache.hadoop.ozone.om.protocolPB.OmTransport;
 import org.apache.hadoop.ozone.om.protocolPB.OmTransportFactory;
 import org.apache.hadoop.ozone.om.protocolPB.OzoneManagerProtocolClientSideTranslatorPB;
+import org.apache.hadoop.ozone.recon.aiops.AIOpsModule;
 import org.apache.hadoop.ozone.recon.api.ExportJobManager;
 import org.apache.hadoop.ozone.recon.chatbot.ChatbotConfigKeys;
 import org.apache.hadoop.ozone.recon.chatbot.ChatbotModule;
@@ -139,6 +140,7 @@ public class ReconControllerModule extends AbstractModule {
     if (ChatbotConfigKeys.isChatbotEnabled(reconServer.getConf())) {
       install(new ChatbotModule());
     }
+    install(new AIOpsModule());
 
     bind(ReconTaskController.class)
         .to(ReconTaskControllerImpl.class).in(Singleton.class);

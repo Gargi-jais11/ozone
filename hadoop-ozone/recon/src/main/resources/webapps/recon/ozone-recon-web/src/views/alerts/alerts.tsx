@@ -18,7 +18,6 @@
 
 import React from 'react';
 import moment from 'moment';
-import axios from 'axios';
 import { Alert, Button, Descriptions, Table, Tag } from 'antd';
 import { TablePaginationConfig } from 'antd/es/table';
 
@@ -26,23 +25,20 @@ import { IAxiosResponse } from '@/types/axios.types';
 import AutoReloadPanel from '@/components/autoReloadPanel/autoReloadPanel';
 import { showDataFetchError } from '@/utils/common';
 import { AutoReloadHelper } from '@/utils/autoReloadHelper';
-import { AxiosGetHelper, cancelRequests } from '@/utils/axiosRequestHelper';
-import { RAG_SERVICE_BASE_URL } from '@/constants/ragService.constants';
+import { AxiosGetHelper, AxiosPostHelper, cancelRequests } from '@/utils/axiosRequestHelper';
 
 import './alerts.less';
 
-interface IPrometheusAlert {
+interface IStoredAlert {
+  id: string;
   labels: Record<string, string>;
   annotations: Record<string, string>;
   state: string;
   activeAt: string;
 }
 
-interface IPrometheusAlertsResponse {
-  status: string;
-  data: {
-    alerts: IPrometheusAlert[];
-  };
+interface IAiopsAlertsResponse {
+  alerts: IStoredAlert[];
 }
 
 interface IRetrievedDocument {
@@ -77,7 +73,7 @@ interface IRemediationPlan {
   warnings: string[];
 }
 
-interface IAlertRecord extends IPrometheusAlert {
+interface IAlertRecord extends IStoredAlert {
   rowKey: string;
 }
 
@@ -131,6 +127,8 @@ const COLUMNS = [
 ];
 
 let cancelAlertsSignal: AbortController;
+let cancelDiagnoseSignal: AbortController;
+let cancelRemediateSignal: AbortController;
 
 export class Alerts extends React.Component<Record<string, object>, IAlertsState> {
   autoReload: AutoReloadHelper;
@@ -154,7 +152,9 @@ export class Alerts extends React.Component<Record<string, object>, IAlertsState
   componentWillUnmount(): void {
     this.autoReload.stopPolling();
     cancelRequests([
-      cancelAlertsSignal
+      cancelAlertsSignal,
+      cancelDiagnoseSignal,
+      cancelRemediateSignal
     ]);
   }
 
@@ -162,14 +162,14 @@ export class Alerts extends React.Component<Record<string, object>, IAlertsState
     this.setState({
       loading: true
     });
-    const { request, controller } = AxiosGetHelper('/api/v1/metrics/alerts', cancelAlertsSignal);
+    const { request, controller } = AxiosGetHelper('/api/v1/aiops/alerts', cancelAlertsSignal);
     cancelAlertsSignal = controller;
 
-    request.then((response: IAxiosResponse<IPrometheusAlertsResponse>) => {
-      const alerts: IPrometheusAlert[] = response.data?.data?.alerts ?? [];
-      const dataSource: IAlertRecord[] = alerts.map((alert, idx) => ({
+    request.then((response: IAxiosResponse<IAiopsAlertsResponse>) => {
+      const alerts: IStoredAlert[] = response.data?.alerts ?? [];
+      const dataSource: IAlertRecord[] = alerts.map((alert) => ({
         ...alert,
-        rowKey: `${alert.labels.alertname ?? 'alert'}-${alert.activeAt ?? idx}`
+        rowKey: alert.id
       }));
       this.setState({
         loading: false,
@@ -195,18 +195,18 @@ export class Alerts extends React.Component<Record<string, object>, IAlertsState
 
   diagnose = (record: IAlertRecord) => {
     this.updateRowState(record.rowKey, { diagnosing: true, diagnosisError: undefined });
-    const payload = {
-      labels: record.labels,
-      annotations: record.annotations,
-      state: record.state,
-      activeAt: record.activeAt
-    };
-    axios.post(`${RAG_SERVICE_BASE_URL}/api/v1/diagnose`, payload).then(response => {
+    const { request, controller } = AxiosPostHelper(
+      `/api/v1/aiops/alerts/${encodeURIComponent(record.id)}/diagnose`,
+      {},
+      cancelDiagnoseSignal
+    );
+    cancelDiagnoseSignal = controller;
+    request.then(response => {
       this.updateRowState(record.rowKey, { diagnosing: false, diagnosis: response.data });
     }).catch(error => {
       this.updateRowState(record.rowKey, {
         diagnosing: false,
-        diagnosisError: error?.message ?? 'Failed to reach the RAG diagnosis service'
+        diagnosisError: error?.response?.data?.message ?? error?.message ?? 'Diagnosis failed'
       });
     });
   };
@@ -217,21 +217,19 @@ export class Alerts extends React.Component<Record<string, object>, IAlertsState
       return;
     }
     this.updateRowState(record.rowKey, { remediating: true, remediationError: undefined });
-    const payload = {
-      alert: {
-        labels: record.labels,
-        annotations: record.annotations,
-        state: record.state,
-        activeAt: record.activeAt
-      },
-      action_id: diagnosis.recommended_fix.action_id
-    };
-    axios.post(`${RAG_SERVICE_BASE_URL}/api/v1/remediate`, payload, { params: { dryRun: true } }).then(response => {
+    const actionId = encodeURIComponent(diagnosis.recommended_fix.action_id);
+    const { request, controller } = AxiosPostHelper(
+      `/api/v1/aiops/alerts/${encodeURIComponent(record.id)}/remediate?dryRun=true&actionId=${actionId}`,
+      {},
+      cancelRemediateSignal
+    );
+    cancelRemediateSignal = controller;
+    request.then(response => {
       this.updateRowState(record.rowKey, { remediating: false, remediation: response.data });
     }).catch(error => {
       this.updateRowState(record.rowKey, {
         remediating: false,
-        remediationError: error?.message ?? 'Failed to reach the RAG diagnosis service'
+        remediationError: error?.response?.data?.message ?? error?.message ?? 'Remediation failed'
       });
     });
   };
