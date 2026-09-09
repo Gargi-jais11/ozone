@@ -18,15 +18,31 @@
 Run with: uvicorn app.main:app --host 0.0.0.0 --port 8642
 """
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router
 from app.config import settings
+
+# Configure logging before importing any module that grabs a module-level
+# logger, so every subsequent log call (e.g. app.rag.llm_client.get_llm_client
+# logging which LLMClient it selected, on the first /diagnose call) is emitted
+# at the intended level instead of Python's unconfigured default.
+logging.basicConfig(
+    level=settings.log_level,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
+from app.api.routes import router  # noqa: E402  (must follow logging.basicConfig)
 
 # Importing app.plugins triggers the @register_plugin decorators, populating
 # the plugin registry before any request arrives.
 import app.plugins  # noqa: F401,E402  (import for side effect, must follow other imports)
+
+logging.getLogger(__name__).info(
+    "recon-rag-service starting up; log_level=%s", settings.log_level
+)
 
 app = FastAPI(
     title="Ozone Recon RAG Diagnosis Service",

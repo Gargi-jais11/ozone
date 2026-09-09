@@ -185,3 +185,5 @@ export class Alerts extends React.Component<RouteComponentProps, IAlertsState> {
     );
   }
 }
+
+export default Alerts;

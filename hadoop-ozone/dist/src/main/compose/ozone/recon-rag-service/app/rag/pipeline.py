@@ -16,13 +16,35 @@
 """Ties retrieval and generation together into a single diagnose() call."""
 
 import json
+import logging
 import re
+from typing import Optional
 
 from app.models import DiagnosticContext, DiagnosisResponse, RecommendedFix
 from app.plugins.base import AlertDiagnosticPlugin
 from app.rag import prompt_templates
 from app.rag.llm_client import LLMClient, get_llm_client
 from app.rag.vector_store import VectorStore, get_vector_store
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_shape(parsed: object) -> Optional[str]:
+    """Reject a syntactically-valid JSON reply that doesn't match the schema
+    the prompt asked for, before any of its fields are trusted."""
+
+    if not isinstance(parsed, dict):
+        return "top-level JSON value is not an object"
+    has_diagnosis = isinstance(parsed.get("diagnosis"), str) and bool(parsed["diagnosis"])
+    has_what_happened = isinstance(parsed.get("what_happened"), str) and bool(parsed["what_happened"])
+    if not has_diagnosis and not has_what_happened:
+        return "missing or non-string 'diagnosis'/'what_happened' field"
+    if not isinstance(parsed.get("evidence", []), list):
+        return "'evidence' field is not a list"
+    fix = parsed.get("recommended_fix")
+    if fix is not None and not isinstance(fix, dict):
+        return "'recommended_fix' is present but not an object"
+    return None
 
 
 _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL | re.IGNORECASE)
@@ -51,18 +73,32 @@ class RagPipeline:
 
         permitted_actions = plugin.permitted_actions_for(context)
         permitted_action_ids = {action.action_id for action in permitted_actions}
+        logger.info(
+            "diagnose alert_type=%s: jmx_metrics=%s config_properties=%s notes=%s permitted_action_ids=%s",
+            context.alert.alert_type, context.jmx_metrics, context.config_properties,
+            context.notes, sorted(permitted_action_ids),
+        )
 
         query = plugin.retrieval_query(context)
         retrieved_documents = self._vector_store.query(query, top_k=3)
+        logger.info(
+            "diagnose alert_type=%s: retrieval_query=%r retrieved_documents=%s",
+            context.alert.alert_type, query, retrieved_documents,
+        )
 
         prompt = prompt_templates.render(
             context, retrieved_documents, permitted_actions, alert_confirmed, verdict_reason
         )
+        logger.debug("diagnose alert_type=%s: prompt=%s", context.alert.alert_type, prompt)
         raw_reply = self._llm_client.generate(prompt)
+        logger.info("diagnose alert_type=%s: raw_reply=%s", context.alert.alert_type, raw_reply)
 
         try:
             parsed = _parse_llm_json(raw_reply)
-        except ValueError:
+        except ValueError as exc:
+            logger.warning(
+                "diagnose alert_type=%s: raw_reply is not valid JSON: %s", context.alert.alert_type, exc
+            )
             parse_error = (
                 "The diagnosis backend returned a response that could not be "
                 "parsed as JSON. Raw response has been included in evidence "
@@ -76,6 +112,30 @@ class RagPipeline:
                 why_it_happened="",
                 how_to_fix="Retry diagnosis after verifying recon-rag-service logs.",
                 diagnosis=parse_error,
+                evidence=[raw_reply],
+                recommended_fix=None,
+                retrieved_documents=retrieved_documents,
+            )
+
+        shape_error = _validate_shape(parsed)
+        if shape_error:
+            logger.warning(
+                "diagnose alert_type=%s: raw_reply failed schema validation: %s",
+                context.alert.alert_type, shape_error,
+            )
+            schema_error = (
+                "The diagnosis backend returned a response with an invalid "
+                f"schema ({shape_error}). Raw response has been included in "
+                "evidence for troubleshooting."
+            )
+            return DiagnosisResponse(
+                alert_type=context.alert.alert_type,
+                alert_confirmed=alert_confirmed,
+                verdict_reason=verdict_reason,
+                what_happened=schema_error,
+                why_it_happened="",
+                how_to_fix="Retry diagnosis after verifying recon-rag-service logs.",
+                diagnosis=schema_error,
                 evidence=[raw_reply],
                 recommended_fix=None,
                 retrieved_documents=retrieved_documents,
@@ -98,6 +158,10 @@ class RagPipeline:
                     rationale=fix_payload.get("rationale", ""),
                 )
             else:
+                logger.warning(
+                    "diagnose alert_type=%s: dropped unpermitted action_id=%r (permitted=%s)",
+                    context.alert.alert_type, action_id, sorted(permitted_action_ids),
+                )
                 parsed.setdefault("evidence", []).append(
                     f"Diagnosis backend proposed unrecognized/unpermitted "
                     f"action_id={action_id!r}; it was dropped."
@@ -119,6 +183,11 @@ class RagPipeline:
         legacy_diagnosis = parsed.get("diagnosis") or what_happened
         evidence = [verdict_reason] + list(parsed.get("evidence", []))
 
+        logger.info(
+            "diagnose alert_type=%s: final what_happened=%r recommended_fix=%s",
+            context.alert.alert_type, what_happened,
+            recommended_fix.action_id if recommended_fix else None,
+        )
         return DiagnosisResponse(
             alert_type=context.alert.alert_type,
             alert_confirmed=alert_confirmed,

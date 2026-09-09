@@ -23,6 +23,7 @@ to any OpenAI chat-completions-compatible endpoint.
 """
 
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict
@@ -31,6 +32,8 @@ import httpx
 
 from app.config import settings
 from app.rag.prompt_templates import SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 _CONTEXT_BLOCK_RE = re.compile(r"```json\n(.*?)\n```", re.DOTALL)
 
@@ -79,6 +82,10 @@ class MockLLMClient(LLMClient):
         config_properties = context.get("config_properties", {})
         notes = context.get("notes", [])
         retrieved_sources = context.get("retrieved_sources", [])
+        logger.info(
+            "MockLLMClient.generate: component=%s jmx_metrics=%s config_properties=%s notes=%s",
+            component, jmx_metrics, config_properties, notes,
+        )
 
         evidence = list(notes)
         if jmx_metrics:
@@ -199,7 +206,7 @@ class MockLLMClient(LLMClient):
                 ),
             }
 
-        return json.dumps(
+        reply = json.dumps(
             {
                 "what_happened": what_happened,
                 "why_it_happened": why_it_happened,
@@ -208,6 +215,8 @@ class MockLLMClient(LLMClient):
                 "recommended_fix": recommended_fix,
             }
         )
+        logger.info("MockLLMClient.generate: reply=%s", reply)
+        return reply
 
     @staticmethod
     def _halve_duration(value: str) -> str:
@@ -325,8 +334,15 @@ class OpenAICompatibleLLMClient(LLMClient):
     (self-hosted vLLM/Ollama gateway, Azure OpenAI, OpenAI itself, ...)."""
 
     def generate(self, prompt: str) -> str:
+        url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+        # Never log the Authorization header -- it carries settings.llm_api_key.
+        logger.info(
+            "OpenAICompatibleLLMClient.generate: POST %s model=%s prompt_chars=%d",
+            url, settings.llm_model, len(prompt),
+        )
+        logger.debug("OpenAICompatibleLLMClient.generate: prompt=%s", prompt)
         response = httpx.post(
-            f"{settings.llm_base_url.rstrip('/')}/chat/completions",
+            url,
             headers={"Authorization": f"Bearer {settings.llm_api_key}"},
             json={
                 "model": settings.llm_model,
@@ -339,10 +355,17 @@ class OpenAICompatibleLLMClient(LLMClient):
             timeout=settings.llm_timeout_seconds,
         )
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        content = response.json()["choices"][0]["message"]["content"]
+        logger.info("OpenAICompatibleLLMClient.generate: reply=%s", content)
+        return content
 
 
 def get_llm_client() -> LLMClient:
     if settings.llm_base_url and settings.llm_api_key:
+        logger.info(
+            "get_llm_client: selecting OpenAICompatibleLLMClient (base_url=%s model=%s)",
+            settings.llm_base_url, settings.llm_model,
+        )
         return OpenAICompatibleLLMClient()
+    logger.info("get_llm_client: no llm_base_url/llm_api_key configured -- selecting MockLLMClient")
     return MockLLMClient()

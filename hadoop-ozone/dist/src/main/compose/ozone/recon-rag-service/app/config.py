@@ -63,6 +63,10 @@ class Settings:
 
     cors_allowed_origins: str = os.environ.get("RAG_CORS_ALLOWED_ORIGINS", "*")
 
+    # Verbosity for the module-level loggers used across collectors/plugins/rag
+    # (e.g. "DEBUG" to see full JMX/config payloads and LLM prompts/replies).
+    log_level: str = os.environ.get("RAG_LOG_LEVEL", "INFO")
+
     # Safety switch: this build only ever plans remediations, never applies them.
     # Kept as an explicit setting (rather than just hardcoding False) so the
     # /remediate handler's rejection message and behavior are driven from one
