@@ -38,7 +38,7 @@ def register_plugin(
 
     def decorator(plugin_cls: Type[AlertDiagnosticPlugin]) -> Type[AlertDiagnosticPlugin]:
         instance = plugin_cls()
-        alert_types = (instance.alert_type,) + extra_alert_types
+        alert_types = dict.fromkeys((instance.alert_type,) + extra_alert_types)
         for alert_type in alert_types:
             if alert_type in _REGISTRY:
                 raise ValueError(

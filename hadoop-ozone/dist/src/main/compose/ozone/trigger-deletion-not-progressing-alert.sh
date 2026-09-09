@@ -17,7 +17,7 @@
 
 # Drives a real key-deletion backlog on an already-running dev cluster
 # (started via ./run.sh, OM's 9874 port published to the host) so the
-# OzoneDeletionNotProgressing Prometheus alert (see ozone-aiops-alerts.yml)
+# OzoneOmDeletionNotProgressing Prometheus alert (see ozone-aiops-alerts.yml)
 # has a chance to fire, for demo purposes.
 #
 # The alert fires on rate(deleting_service_metrics_num_keys_purged[10m]) == 0
@@ -122,7 +122,7 @@ for i in $(seq 1 "$ITERATIONS"); do
   if [ "$stable_count" -ge "$STABLE_POLLS" ]; then
     echo ""
     echo "A backlog gap of $gap key(s) has stayed open across $STABLE_POLLS consecutive polls."
-    echo "OzoneDeletionNotProgressing needs numKeysPurged's rate to stay at zero for 5"
+    echo "OzoneOmDeletionNotProgressing needs numKeysPurged's rate to stay at zero for 5"
     echo "uninterrupted minutes (the rule's 'for: 5m') before it moves from pending to"
     echo "firing. Watch it at http://localhost:9090/alerts (requires the monitoring.yaml"
     echo "compose add-on) or on Recon's Alerts page."

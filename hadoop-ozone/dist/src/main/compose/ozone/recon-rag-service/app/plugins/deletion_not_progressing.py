@@ -126,7 +126,11 @@ def _halve_duration(value: str) -> str:
     return f"{halved}{unit}"
 
 
-@register_plugin("OzoneScmDeletionNotProgressing", "OzoneDatanodeDeletionNotProgressing")
+@register_plugin(
+    "OzoneOmDeletionNotProgressing",
+    "OzoneScmDeletionNotProgressing",
+    "OzoneDatanodeDeletionNotProgressing",
+)
 class DeletionNotProgressingPlugin(AlertDiagnosticPlugin):
 
     @property
