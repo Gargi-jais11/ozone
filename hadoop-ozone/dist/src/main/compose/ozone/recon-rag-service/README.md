@@ -100,7 +100,7 @@ export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml:rag-service.yaml
 |---|---|
 | `monitoring.yaml` | Prometheus + Alertmanager services |
 | `prometheus.yml` | Scrapes OM/SCM/DN; loads `ozone-aiops-alerts.yml`; sends alerts to Alertmanager |
-| `ozone-aiops-alerts.yml` | Three alert rules (OM/SCM/datanode); each rule derives severity (low/medium/high/critical) from how long the condition has held |
+| `ozone-aiops-alerts.yml` | Six alert rules: three deletion-stuck alerts (OM/SCM/datanode) deriving severity (low/medium/high/critical) from how long the condition has held, and three SCM container-health alerts (missing/under-replicated/unhealthy) deriving severity from affected container count, escalating to critical if stuck for over 1h |
 | `alertmanager.yml` | Webhook to Recon; inhibition so only the highest severity tier notifies |
 | `alertmanager.yml` | Webhook receiver -> `http://recon:9888/api/v1/aiops/webhook` |
 | `rag-service.yaml` | Builds `recon-rag` container; sets `ozone.recon.aiops.*` on Recon |
@@ -163,10 +163,17 @@ curl -s http://localhost:8642/api/v1/plugins
   return the default `/conf` format. Missing properties still produce warnings
   and default-based remediation plans.
 - **Live remediation (`dryRun=false`)** is not implemented (HTTP 501).
-- **One deletion plugin** ships today, registered for three Prometheus
-  alertnames: `OzoneOmDeletionNotProgressing`, `OzoneScmDeletionNotProgressing`,
-  and `OzoneDatanodeDeletionNotProgressing` (legacy `OzoneDeletionNotProgressing`
-  still maps to OM).
+- **Two plugins ship today**:
+  - `DeletionNotProgressingPlugin`, registered for three Prometheus
+    alertnames: `OzoneOmDeletionNotProgressing`, `OzoneScmDeletionNotProgressing`,
+    and `OzoneDatanodeDeletionNotProgressing` (legacy `OzoneDeletionNotProgressing`
+    still maps to OM).
+  - `ContainerHealthPlugin`, registered for `OzoneScmContainerMissing`,
+    `OzoneScmContainerUnderReplicated`, and `OzoneScmContainerUnhealthy`
+    (backed by SCM's `ReplicationManagerMetrics`). Only `under_replicated`
+    has an automated fix; `missing`/`unhealthy` always require operator
+    investigation, so `permitted_actions_for()` returns an empty list for
+    those two.
 
 ## Pluggable architecture
 
@@ -260,11 +267,14 @@ See the `rag-service.yaml` add-on and its section in the compose
 - [x] Phase 4: docker-compose add-on wiring and a minimal Recon UI page.
 - [x] Phase 5: Alertmanager webhook -> Recon RocksDB persistence; Recon as
       Java gateway to this service (browser no longer calls `:8642` directly).
+- [x] Phase 6: `ContainerHealthPlugin` (missing/under-replicated/unhealthy
+      containers, backed by SCM's `ReplicationManagerMetrics`) -- the second
+      plugin, proving the ABC/registry generalizes beyond `DeletionNotProgressing`.
 - [ ] Deferred: live remediation execution (`dryRun=false`) against a real
       cluster, gated behind explicit operator opt-in and an audit trail.
-- [ ] Deferred: additional plugins beyond `DeletionNotProgressing` (the
-      ABC/registry already generalize to this).
-- [ ] Deferred: a curated, larger knowledge base beyond the two illustrative
+- [ ] Deferred: further plugins (datanode stale/dead node counts, pipeline
+      health, JVM heap pressure, ...) -- same ABC/registry pattern.
+- [ ] Deferred: a curated, larger knowledge base beyond the illustrative
       runbook documents shipped here.
 - [ ] Deferred: fix OM `/conf` XML parsing in `config_client.py` so diagnose
       and remediate plans use live config values.

@@ -73,18 +73,26 @@ export interface IAlertDiagnoseLocationState {
   alert?: IStoredAlert;
 }
 
-/** Default remediation action per deletion alert component (matches recon-rag-service plugins). */
-export const DELETION_ACTION_BY_COMPONENT: Record<string, string> = {
-  om: 'increase_key_deleting_limit_per_task',
-  scm: 'increase_scm_block_deletion_per_interval_max',
-  datanode: 'decrease_datanode_block_deleting_interval'
+/**
+ * Default remediation action per Prometheus alertname, matching each
+ * plugin's permitted_actions_for() in recon-rag-service. Alerts with no
+ * entry here (e.g. OzoneScmContainerMissing/Unhealthy) never get an
+ * automated fix from the backend either -- those health states require
+ * operator investigation, not a config change.
+ */
+export const ACTION_ID_BY_ALERTNAME: Record<string, string> = {
+  OzoneOmDeletionNotProgressing: 'increase_key_deleting_limit_per_task',
+  OzoneScmDeletionNotProgressing: 'increase_scm_block_deletion_per_interval_max',
+  OzoneDatanodeDeletionNotProgressing: 'decrease_datanode_block_deleting_interval',
+  OzoneScmContainerUnderReplicated: 'increase_under_replicated_queue_processing_frequency'
 };
 
 /** Placeholder config changes for UI preview when the backend omits recommended_fix. */
-export const DELETION_PREVIEW_CONFIG_BY_COMPONENT: Record<string, Record<string, string>> = {
-  om: { 'ozone.key.deleting.limit.per.task': '100000' },
-  scm: { 'hdds.scm.block.deletion.per-interval.max': '1000000' },
-  datanode: { 'ozone.block.deleting.service.interval': '30s' }
+export const PREVIEW_CONFIG_CHANGES_BY_ALERTNAME: Record<string, Record<string, string>> = {
+  OzoneOmDeletionNotProgressing: { 'ozone.key.deleting.limit.per.task': '100000' },
+  OzoneScmDeletionNotProgressing: { 'hdds.scm.block.deletion.per-interval.max': '1000000' },
+  OzoneDatanodeDeletionNotProgressing: { 'ozone.block.deleting.service.interval': '30s' },
+  OzoneScmContainerUnderReplicated: { 'hdds.scm.replication.under.replicated.interval': '15s' }
 };
 
 // UI-only preview of what "apply fix" will look like once live remediation

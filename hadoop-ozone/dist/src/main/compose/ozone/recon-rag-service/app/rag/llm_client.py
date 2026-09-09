@@ -52,6 +52,13 @@ def _extract_context_block(prompt: str) -> Dict[str, Any]:
         return {}
 
 
+_CONTAINER_HEALTH_ALERT_TYPES = {
+    "OzoneScmContainerMissing": "missing",
+    "OzoneScmContainerUnderReplicated": "under_replicated",
+    "OzoneScmContainerUnhealthy": "unhealthy",
+}
+
+
 class MockLLMClient(LLMClient):
     """Deterministic rule-based diagnosis, used when no real LLM endpoint is
     configured. Not a literal placeholder -- it produces a genuine,
@@ -59,6 +66,13 @@ class MockLLMClient(LLMClient):
 
     def generate(self, prompt: str) -> str:
         context = _extract_context_block(prompt)
+        alert_type = context.get("alert_type", "")
+        health_state = _CONTAINER_HEALTH_ALERT_TYPES.get(alert_type)
+        if health_state:
+            return self._generate_container_health(context, health_state)
+        return self._generate_deletion(context)
+
+    def _generate_deletion(self, context: Dict[str, Any]) -> str:
         alert_labels = context.get("alert_labels", {})
         component = alert_labels.get("component", "om").lower()
         jmx_metrics = context.get("jmx_metrics", {})
@@ -202,6 +216,108 @@ class MockLLMClient(LLMClient):
             return value
         amount = max(1, int(match.group(1)) // 2)
         return f"{amount}{match.group(2)}"
+
+    def _generate_container_health(self, context: Dict[str, Any], health_state: str) -> str:
+        jmx_metrics = context.get("jmx_metrics", {})
+        config_properties = context.get("config_properties", {})
+        notes = context.get("notes", [])
+        retrieved_sources = context.get("retrieved_sources", [])
+
+        evidence = list(notes)
+        if jmx_metrics:
+            evidence.append(f"ReplicationManagerMetrics snapshot: {jmx_metrics}")
+        if config_properties:
+            evidence.append(f"Relevant configuration: {config_properties}")
+        if retrieved_sources:
+            evidence.append(f"Matched runbook(s): {', '.join(retrieved_sources)}")
+
+        metric_key = {
+            "missing": "MissingContainers",
+            "under_replicated": "UnderReplicatedContainers",
+            "unhealthy": "UnhealthyContainers",
+        }[health_state]
+        count = jmx_metrics.get(metric_key)
+
+        recommended_fix = None
+        if not jmx_metrics:
+            what_happened = (
+                "The SCM container-health alert fired but recon-rag-service could "
+                "not collect ReplicationManagerMetrics from SCM."
+            )
+            why_it_happened = (
+                "The SCM JMX endpoint may be unreachable, or SCM may still be in "
+                "safemode/starting up."
+            )
+            how_to_fix = "Verify connectivity to SCM's HTTP endpoint and retry diagnosis."
+        elif health_state == "missing":
+            what_happened = (
+                f"SCM reports {count} container(s) with no online replicas "
+                f"({metric_key}={count})."
+            )
+            why_it_happened = (
+                "All datanodes holding a replica of these containers are "
+                "unavailable (down, decommissioned, or with a failed volume), or "
+                "the containers were under-replicated long enough that the last "
+                "remaining copies were lost."
+            )
+            how_to_fix = (
+                "Investigate datanode and disk health immediately for the "
+                "affected containers (`ozone admin container info <id>`). This is "
+                "an operator escalation; no automated config fix applies to "
+                "already-missing data."
+            )
+        elif health_state == "unhealthy":
+            what_happened = (
+                f"SCM reports {count} container(s) with replicas in inconsistent "
+                f"states ({metric_key}={count})."
+            )
+            why_it_happened = (
+                "A datanode likely crashed mid-close or a network partition "
+                "occurred during a Ratis pipeline transition, leaving replicas "
+                "disagreeing on container state."
+            )
+            how_to_fix = (
+                "Inspect the affected containers with `ozone admin container "
+                "info <id>` to determine the authoritative replica before any "
+                "repair. No automated config fix applies."
+            )
+        else:
+            what_happened = (
+                f"SCM reports {count} under-replicated container(s) "
+                f"({metric_key}={count})."
+            )
+            why_it_happened = (
+                "ReplicationManager's under-replicated queue is not draining "
+                "fast enough for the current backlog, or there are not enough "
+                "healthy target datanodes for the container's placement policy."
+            )
+            prop = "hdds.scm.replication.under.replicated.interval"
+            current_interval = config_properties.get(prop, "30s")
+            proposed_interval = self._halve_duration(current_interval)
+            how_to_fix = (
+                f"Halve {prop} from {current_interval} to {proposed_interval} so "
+                "ReplicationManager re-checks the queue more often. Also verify "
+                "datanode capacity and placement-policy constraints."
+            )
+            recommended_fix = {
+                "action_id": "increase_under_replicated_queue_processing_frequency",
+                "summary": "Process the under-replicated container queue more often.",
+                "config_changes": {prop: proposed_interval},
+                "rationale": (
+                    "Halving the check interval lets ReplicationManager react to "
+                    "queue changes sooner when datanodes are healthy."
+                ),
+            }
+
+        return json.dumps(
+            {
+                "what_happened": what_happened,
+                "why_it_happened": why_it_happened,
+                "how_to_fix": how_to_fix,
+                "evidence": evidence,
+                "recommended_fix": recommended_fix,
+            }
+        )
 
 
 class OpenAICompatibleLLMClient(LLMClient):

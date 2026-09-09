@@ -20,7 +20,6 @@ Prometheus alertnames: ``OzoneOmDeletionNotProgressing``,
 Each has low/medium/high/critical severity tiers (see ozone-aiops-alerts.yml).
 """
 
-import re
 from typing import Dict, List, Tuple
 
 from app.collectors.config_client import ConfigFetchError, fetch_properties
@@ -31,10 +30,11 @@ from app.collectors.endpoints import (
     deletion_component,
     resolve_http_address,
 )
-from app.collectors.jmx_client import JmxFetchError, fetch_bean
+from app.collectors.jmx_client import JmxFetchError, fetch_bean, pick_metrics
 from app.config import ClusterEndpoints
 from app.models import ActionSpec, AlertPayload, DiagnosticContext, RemediationPlan
 from app.plugins.base import AlertDiagnosticPlugin
+from app.plugins.duration_utils import halve_duration
 from app.plugins.registry import register_plugin
 
 OM_DELETING_SERVICE_JMX_QUERY = "Hadoop:service=OzoneManager,name=DeletingServiceMetrics"
@@ -110,29 +110,6 @@ _COMPONENT_ACTIONS: Dict[str, str] = {
     COMPONENT_SCM: INCREASE_SCM_BLOCK_DELETION_LIMIT,
     COMPONENT_DATANODE: DECREASE_DN_BLOCK_DELETING_INTERVAL,
 }
-
-
-def _pick_metrics(bean: Dict[str, object], keys: tuple) -> Dict[str, object]:
-    """Return ``keys`` from ``bean``, matching case-insensitively when needed."""
-
-    lowered = {str(k).lower(): v for k, v in bean.items()}
-    picked: Dict[str, object] = {}
-    for key in keys:
-        if key in bean:
-            picked[key] = bean[key]
-        elif key.lower() in lowered:
-            picked[key] = lowered[key.lower()]
-    return picked
-
-
-def _halve_duration(value: str) -> str:
-    match = re.fullmatch(r"(\d+)([smhd])", value.strip())
-    if not match:
-        return value
-    amount = int(match.group(1))
-    unit = match.group(2)
-    halved = max(1, amount // 2)
-    return f"{halved}{unit}"
 
 
 @register_plugin(
@@ -240,7 +217,7 @@ class DeletionNotProgressingPlugin(AlertDiagnosticPlugin):
             if not bean:
                 notes.append(missing_bean_note)
                 return {}
-            return _pick_metrics(bean, keys)
+            return pick_metrics(bean, keys)
         except JmxFetchError as exc:
             notes.append(f"Could not reach {endpoint_label} JMX endpoint: {exc}")
             return {}
@@ -478,7 +455,7 @@ class DeletionNotProgressingPlugin(AlertDiagnosticPlugin):
     def _plan_decrease_dn_interval(self, context: DiagnosticContext) -> RemediationPlan:
         prop = "ozone.block.deleting.service.interval"
         current_value = context.config_properties.get(prop) or DEFAULT_DN_BLOCK_DELETING_INTERVAL
-        proposed_value = _halve_duration(current_value)
+        proposed_value = halve_duration(current_value)
         instance = context.alert.labels.get("instance", "affected datanode")
         warnings = list(context.notes)
         if prop not in context.config_properties:

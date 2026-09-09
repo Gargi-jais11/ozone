@@ -236,3 +236,178 @@ groups:
             BlockDeletingService on {{ $labels.instance }} has pending blocks
             with zero success rate. Severity tier {{ $labels.severity }} from
             duration the condition has held.
+
+  # Three SCM container-health alerts, all backed by ReplicationManagerMetrics
+  # container-count gauges. Unlike the deletion alerts above, severity here is
+  # driven primarily by HOW MANY containers are affected, not how long the
+  # condition has held:
+  #   1-49 containers -> low | 50-99 -> medium | 100-199 -> high | 200+ -> critical
+  # One additional check on top of the count: if the condition (any nonzero
+  # count) has been continuously true for more than 1h, it always escalates
+  # to critical regardless of count (something stuck for over an hour is
+  # critical on its own merits; 200+ is already critical so this is a no-op
+  # for that band). A 5m sustained-nonzero gate (same pattern as the deletion
+  # alerts) avoids firing on a single noisy scrape for the low/medium/high
+  # bands; the >=200 critical band fires immediately since any confirmation
+  # delay for a count that severe is undesirable.
+  #
+  # alertname must match app/plugins/container_health.py.
+  - name: ozone-aiops-container-health
+    rules:
+      - alert: OzoneScmContainerMissing
+        expr: |
+          label_replace(
+            replication_manager_metrics_missing_containers >= 200,
+            "severity", "critical", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_missing_containers > 0
+              and replication_manager_metrics_missing_containers < 200
+              and count_over_time((replication_manager_metrics_missing_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "critical", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_missing_containers >= 100
+              and replication_manager_metrics_missing_containers < 200
+              and count_over_time((replication_manager_metrics_missing_containers > 0)[5m:1m]) >= 5
+              unless count_over_time((replication_manager_metrics_missing_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "high", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_missing_containers >= 50
+              and replication_manager_metrics_missing_containers < 100
+              and count_over_time((replication_manager_metrics_missing_containers > 0)[5m:1m]) >= 5
+              unless count_over_time((replication_manager_metrics_missing_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "medium", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_missing_containers > 0
+              and replication_manager_metrics_missing_containers < 50
+              and count_over_time((replication_manager_metrics_missing_containers > 0)[5m:1m]) >= 5
+              unless count_over_time((replication_manager_metrics_missing_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "low", "", ""
+          )
+        labels:
+          component: scm
+          health_state: missing
+        annotations:
+          summary: "SCM reports containers with no online replicas ({{ $labels.severity }})"
+          description: >-
+            ReplicationManagerMetrics.MissingContainers > 0 on {{ $labels.instance }}.
+            These containers have no online replicas at all -- this is a data
+            availability risk, not just a replication backlog. Severity tier
+            {{ $labels.severity }} from container count (and escalated to
+            critical if stuck for more than 1h regardless of count).
+
+      - alert: OzoneScmContainerUnderReplicated
+        expr: |
+          label_replace(
+            replication_manager_metrics_under_replicated_containers >= 200,
+            "severity", "critical", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_under_replicated_containers > 0
+              and replication_manager_metrics_under_replicated_containers < 200
+              and count_over_time((replication_manager_metrics_under_replicated_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "critical", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_under_replicated_containers >= 100
+              and replication_manager_metrics_under_replicated_containers < 200
+              and count_over_time((replication_manager_metrics_under_replicated_containers > 0)[5m:1m]) >= 5
+              unless count_over_time((replication_manager_metrics_under_replicated_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "high", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_under_replicated_containers >= 50
+              and replication_manager_metrics_under_replicated_containers < 100
+              and count_over_time((replication_manager_metrics_under_replicated_containers > 0)[5m:1m]) >= 5
+              unless count_over_time((replication_manager_metrics_under_replicated_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "medium", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_under_replicated_containers > 0
+              and replication_manager_metrics_under_replicated_containers < 50
+              and count_over_time((replication_manager_metrics_under_replicated_containers > 0)[5m:1m]) >= 5
+              unless count_over_time((replication_manager_metrics_under_replicated_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "low", "", ""
+          )
+        labels:
+          component: scm
+          health_state: under_replicated
+        annotations:
+          summary: "SCM container under-replication queue not draining ({{ $labels.severity }})"
+          description: >-
+            ReplicationManagerMetrics.UnderReplicatedContainers > 0 on
+            {{ $labels.instance }}. Severity tier {{ $labels.severity }} from
+            container count (and escalated to critical if stuck for more than
+            1h regardless of count).
+
+      - alert: OzoneScmContainerUnhealthy
+        expr: |
+          label_replace(
+            replication_manager_metrics_unhealthy_containers >= 200,
+            "severity", "critical", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_unhealthy_containers > 0
+              and replication_manager_metrics_unhealthy_containers < 200
+              and count_over_time((replication_manager_metrics_unhealthy_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "critical", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_unhealthy_containers >= 100
+              and replication_manager_metrics_unhealthy_containers < 200
+              and count_over_time((replication_manager_metrics_unhealthy_containers > 0)[5m:1m]) >= 5
+              unless count_over_time((replication_manager_metrics_unhealthy_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "high", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_unhealthy_containers >= 50
+              and replication_manager_metrics_unhealthy_containers < 100
+              and count_over_time((replication_manager_metrics_unhealthy_containers > 0)[5m:1m]) >= 5
+              unless count_over_time((replication_manager_metrics_unhealthy_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "medium", "", ""
+          )
+          or label_replace(
+            (
+              replication_manager_metrics_unhealthy_containers > 0
+              and replication_manager_metrics_unhealthy_containers < 50
+              and count_over_time((replication_manager_metrics_unhealthy_containers > 0)[5m:1m]) >= 5
+              unless count_over_time((replication_manager_metrics_unhealthy_containers > 0)[1h:1m]) >= 60
+            ),
+            "severity", "low", "", ""
+          )
+        labels:
+          component: scm
+          health_state: unhealthy
+        annotations:
+          summary: "SCM reports containers in an inconsistent replica state ({{ $labels.severity }})"
+          description: >-
+            ReplicationManagerMetrics.UnhealthyContainers > 0 on {{ $labels.instance }}:
+            closed/quasi-closed containers with replicas in inconsistent
+            states. Severity tier {{ $labels.severity }} from container count
+            (and escalated to critical if stuck for more than 1h regardless
+            of count).

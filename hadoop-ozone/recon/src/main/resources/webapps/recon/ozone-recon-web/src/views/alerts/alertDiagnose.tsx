@@ -43,8 +43,8 @@ import { Link, RouteComponentProps } from 'react-router-dom';
 
 import { IAxiosResponse } from '@/types/axios.types';
 import {
-  DELETION_ACTION_BY_COMPONENT,
-  DELETION_PREVIEW_CONFIG_BY_COMPONENT,
+  ACTION_ID_BY_ALERTNAME,
+  PREVIEW_CONFIG_CHANGES_BY_ALERTNAME,
   IAiopsAlertsResponse,
   IAlertDiagnoseLocationState,
   IApplyFixResult,
@@ -158,18 +158,25 @@ export class AlertDiagnose extends React.Component<
     if (diagnosis.recommended_fix?.action_id) {
       return diagnosis.recommended_fix.action_id;
     }
-    const component = alert?.labels.component?.toLowerCase() ?? 'om';
-    return DELETION_ACTION_BY_COMPONENT[component];
+    const alertname = alert?.labels.alertname ?? diagnosis.alert_type;
+    return ACTION_ID_BY_ALERTNAME[alertname];
   };
 
-  resolveRemediationPreview = (diagnosis: IDiagnosisResponse, alert?: IStoredAlert): IRecommendedFix => {
+  /**
+   * Returns undefined when neither the backend nor the alertname fallback
+   * has an automated fix for this alert (e.g. missing/unhealthy containers,
+   * which always require operator investigation instead of a config change).
+   */
+  resolveRemediationPreview = (diagnosis: IDiagnosisResponse, alert?: IStoredAlert): IRecommendedFix | undefined => {
     if (diagnosis.recommended_fix) {
       return diagnosis.recommended_fix;
     }
-    const component = alert?.labels.component?.toLowerCase() ?? 'om';
-    const actionId = DELETION_ACTION_BY_COMPONENT[component] ?? DELETION_ACTION_BY_COMPONENT.om;
-    const configChanges = DELETION_PREVIEW_CONFIG_BY_COMPONENT[component]
-      ?? DELETION_PREVIEW_CONFIG_BY_COMPONENT.om;
+    const alertname = alert?.labels.alertname ?? diagnosis.alert_type;
+    const actionId = ACTION_ID_BY_ALERTNAME[alertname];
+    if (!actionId) {
+      return undefined;
+    }
+    const configChanges = PREVIEW_CONFIG_CHANGES_BY_ALERTNAME[alertname] ?? {};
     return {
       action_id: actionId,
       summary: diagnosis.how_to_fix || 'Apply the suggested configuration change for this alert.',
@@ -217,6 +224,10 @@ export class AlertDiagnose extends React.Component<
       return;
     }
     const preview = this.resolveRemediationPreview(diagnosis, alert);
+    if (!preview) {
+      this.setState({ remediationError: 'No remediation action is available for this alert type.' });
+      return;
+    }
     const configChanges = preview.config_changes;
     Modal.confirm({
       title: 'Apply this fix to the cluster?',
@@ -255,7 +266,7 @@ export class AlertDiagnose extends React.Component<
         applyResult: {
           status: 'success',
           appliedAt: moment().toISOString(),
-          configChanges: remediation?.config_changes ?? preview.config_changes
+          configChanges: remediation?.config_changes ?? preview?.config_changes ?? {}
         }
       });
     }, 1200);
@@ -408,13 +419,22 @@ export class AlertDiagnose extends React.Component<
 
         {diagnosis && (() => {
           const remediationPreview = this.resolveRemediationPreview(diagnosis, alert);
+          if (!remediationPreview) {
+            return (
+              <Card className='remediation-card' title='Remediation'>
+                <Alert type='info' showIcon
+                  message='No automated fix available'
+                  description='This alert type has no automated remediation -- it requires operator investigation (see How to fix it? above) rather than a config change.' />
+              </Card>
+            );
+          }
           return (
             <Card className='remediation-card' title='Remediation'>
               <p>{remediationPreview.summary}</p>
               {!diagnosis.recommended_fix &&
                 <Alert type='info' showIcon style={{ marginBottom: 12 }}
                   message='Using suggested fix from analysis'
-                  description='The backend did not attach an automated fix (for example when the alert could not be confirmed). The action below is inferred from the alert component and How to fix guidance.' />}
+                  description='The backend did not attach an automated fix (for example when the alert could not be confirmed). The action below is inferred from the alert type and How to fix guidance.' />}
               {Object.keys(remediationPreview.config_changes).length > 0 &&
                 <Descriptions size='small' column={1} bordered>
                   {Object.entries(remediationPreview.config_changes).map(([key, value]) =>

@@ -17,7 +17,7 @@
 HTTP server (OM, SCM, Recon, Datanode) at ``/jmx``.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import httpx
 
@@ -71,3 +71,22 @@ def merge_bean_attributes(beans: List[Dict[str, Any]]) -> Dict[str, Any]:
             base_key = key.rsplit(".", 1)[0] if key.rsplit(".", 1)[-1].isdigit() else key
             merged[base_key] = value
     return merged
+
+
+def pick_metrics(bean: Dict[str, Any], keys: Iterable[str]) -> Dict[str, Any]:
+    """Return ``keys`` from ``bean``, matching case-insensitively when needed.
+
+    Ozone JMX beans are not consistent about key casing across services (e.g.
+    OM's DeletingServiceMetrics uses PascalCase, some SCM gauges use
+    camelCase), so plugins look a requested key up case-insensitively rather
+    than duplicating this matching logic themselves.
+    """
+
+    lowered = {str(key).lower(): value for key, value in bean.items()}
+    picked: Dict[str, Any] = {}
+    for key in keys:
+        if key in bean:
+            picked[key] = bean[key]
+        elif key.lower() in lowered:
+            picked[key] = lowered[key.lower()]
+    return picked

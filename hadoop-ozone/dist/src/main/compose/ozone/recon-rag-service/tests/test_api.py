@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from app.main import app
+from app.plugins.container_health import INCREASE_UNDER_REPLICATED_QUEUE_FREQUENCY
 from app.plugins.deletion_not_progressing import INCREASE_KEY_DELETING_LIMIT
 
 client = TestClient(app)
@@ -28,6 +29,18 @@ ALERT_PAYLOAD = {
         "alertname": "OzoneOmDeletionNotProgressing",
         "component": "om",
         "instance": "om:9874",
+    },
+    "annotations": {},
+    "state": "firing",
+    "activeAt": "2026-09-01T00:00:00Z",
+}
+
+CONTAINER_ALERT_PAYLOAD = {
+    "labels": {
+        "alertname": "OzoneScmContainerUnderReplicated",
+        "component": "scm",
+        "health_state": "under_replicated",
+        "instance": "scm:9876",
     },
     "annotations": {},
     "state": "firing",
@@ -61,6 +74,33 @@ def _mock_om_endpoints():
     )
 
 
+def _mock_scm_container_health_endpoints(under_replicated_containers: int = 12):
+    respx.get("http://scm:9876/jmx").mock(
+        return_value=Response(
+            200,
+            json={
+                "beans": [
+                    {
+                        "UnderReplicatedContainers": under_replicated_containers,
+                        "MissingContainers": 0,
+                        "UnhealthyContainers": 0,
+                    }
+                ]
+            },
+        )
+    )
+    respx.get("http://scm:9876/conf").mock(
+        return_value=Response(
+            200,
+            json={
+                "properties": [
+                    {"key": "hdds.scm.replication.under.replicated.interval", "value": "30s"},
+                ]
+            },
+        )
+    )
+
+
 def test_health():
     response = client.get("/api/v1/health")
     assert response.status_code == 200
@@ -74,6 +114,15 @@ def test_plugins_lists_deletion_not_progressing():
     assert "OzoneOmDeletionNotProgressing" in plugins
     assert "OzoneScmDeletionNotProgressing" in plugins
     assert "OzoneDatanodeDeletionNotProgressing" in plugins
+
+
+def test_plugins_lists_container_health():
+    response = client.get("/api/v1/plugins")
+    assert response.status_code == 200
+    plugins = response.json()["plugins"]
+    assert "OzoneScmContainerMissing" in plugins
+    assert "OzoneScmContainerUnderReplicated" in plugins
+    assert "OzoneScmContainerUnhealthy" in plugins
 
 
 @respx.mock
@@ -115,6 +164,65 @@ def test_diagnose_flags_unconfirmed_alert_when_no_backlog():
     body = response.json()
     assert body["alert_confirmed"] is False
     assert body["recommended_fix"] is None
+
+
+@respx.mock
+def test_diagnose_container_under_replicated_returns_a_diagnosis():
+    _mock_scm_container_health_endpoints()
+    response = client.post("/api/v1/diagnose", json=CONTAINER_ALERT_PAYLOAD)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["alert_type"] == "OzoneScmContainerUnderReplicated"
+    assert body["alert_confirmed"] is True
+    assert body["recommended_fix"]["action_id"] == INCREASE_UNDER_REPLICATED_QUEUE_FREQUENCY
+
+
+@respx.mock
+def test_diagnose_container_missing_never_proposes_a_fix():
+    respx.get("http://scm:9876/jmx").mock(
+        return_value=Response(200, json={"beans": [{"MissingContainers": 2}]})
+    )
+    respx.get("http://scm:9876/conf").mock(return_value=Response(200, json={"properties": []}))
+    missing_alert = {
+        **CONTAINER_ALERT_PAYLOAD,
+        "labels": {**CONTAINER_ALERT_PAYLOAD["labels"], "alertname": "OzoneScmContainerMissing"},
+    }
+    response = client.post("/api/v1/diagnose", json=missing_alert)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["alert_confirmed"] is True
+    assert body["recommended_fix"] is None
+
+
+@respx.mock
+def test_remediate_container_under_replicated_dry_run_returns_plan():
+    _mock_scm_container_health_endpoints()
+    response = client.post(
+        "/api/v1/remediate",
+        params={"dryRun": "true"},
+        json={"alert": CONTAINER_ALERT_PAYLOAD, "action_id": INCREASE_UNDER_REPLICATED_QUEUE_FREQUENCY},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["config_changes"]["hdds.scm.replication.under.replicated.interval"] == "15s"
+
+
+@respx.mock
+def test_remediate_container_missing_rejects_automated_fix():
+    respx.get("http://scm:9876/jmx").mock(
+        return_value=Response(200, json={"beans": [{"MissingContainers": 2}]})
+    )
+    respx.get("http://scm:9876/conf").mock(return_value=Response(200, json={"properties": []}))
+    missing_alert = {
+        **CONTAINER_ALERT_PAYLOAD,
+        "labels": {**CONTAINER_ALERT_PAYLOAD["labels"], "alertname": "OzoneScmContainerMissing"},
+    }
+    response = client.post(
+        "/api/v1/remediate",
+        params={"dryRun": "true"},
+        json={"alert": missing_alert, "action_id": INCREASE_UNDER_REPLICATED_QUEUE_FREQUENCY},
+    )
+    assert response.status_code == 400
 
 
 @respx.mock
