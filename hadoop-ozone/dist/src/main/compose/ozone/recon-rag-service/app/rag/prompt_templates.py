@@ -31,12 +31,17 @@ SYSTEM_PROMPT = (
     "You are an Ozone site-reliability assistant. You diagnose cluster alerts "
     "using only the metrics, configuration and knowledge-base excerpts you are "
     "given, and you must never propose a remediation action_id that is not in "
-    "the permitted_action_ids list. Respond with ONLY the JSON object described "
-    "in the prompt, no surrounding prose."
+    "the permitted_action_ids list. The context block includes a deterministic "
+    "alert_confirmed_by_metrics verdict computed directly from the collected "
+    "metrics -- treat it as ground truth: if it is false, say so plainly in "
+    "why_it_happened and omit recommended_fix entirely. Respond with ONLY the "
+    "JSON object described in the prompt, no surrounding prose."
 )
 
 _OUTPUT_SCHEMA = """{
-  "diagnosis": "<one paragraph explaining the likely root cause>",
+  "what_happened": "<what the alert observed: symptoms, metrics, backlog state>",
+  "why_it_happened": "<likely root cause based on metrics, config and runbooks>",
+  "how_to_fix": "<concrete remediation steps an operator should take>",
   "evidence": ["<short factual bullet>", "..."],
   "recommended_fix": {
     "action_id": "<one of permitted_action_ids, or omit the whole object if none apply>",
@@ -51,6 +56,8 @@ def render(
     context: DiagnosticContext,
     retrieved_documents: List[RetrievedDocument],
     permitted_actions: List[ActionSpec],
+    alert_confirmed: bool = True,
+    verdict_reason: str = "",
 ) -> str:
     context_block = {
         "alert_type": context.alert.alert_type,
@@ -61,6 +68,8 @@ def render(
         "notes": context.notes,
         "permitted_action_ids": [action.action_id for action in permitted_actions],
         "retrieved_sources": [document.source for document in retrieved_documents],
+        "alert_confirmed_by_metrics": alert_confirmed,
+        "verdict_reason": verdict_reason,
     }
 
     retrieved_text = "\n\n".join(

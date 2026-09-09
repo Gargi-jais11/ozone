@@ -33,5 +33,6 @@ export const breadcrumbNameMap: BreadcrumbNameMap = {
   '/Om': 'OM DB Insights',
   '/Capacity': 'Cluster Capacity',
   '/Assistant': 'Recon AI',
-  '/Alerts': 'Alerts'
+  '/Alerts': 'Alerts',
+  '/Alerts/Diagnose': 'Diagnosis'
 };

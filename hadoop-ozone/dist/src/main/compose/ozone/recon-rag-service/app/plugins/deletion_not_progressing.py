@@ -21,7 +21,7 @@ Each has low/medium/high/critical severity tiers (see ozone-aiops-alerts.yml).
 """
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from app.collectors.config_client import ConfigFetchError, fetch_properties
 from app.collectors.endpoints import (
@@ -73,12 +73,12 @@ DN_CONFIG_PROPERTIES = (
 )
 
 OM_JMX_KEYS = (
-    "numKeysProcessed",
-    "numKeysSentForPurge",
-    "numKeysPurged",
-    "numDirsSentForPurge",
-    "numDirsPurged",
-    "metricsResetTimeStamp",
+    "NumKeysProcessed",
+    "NumKeysSentForPurge",
+    "NumKeysPurged",
+    "NumDirsSentForPurge",
+    "NumDirsPurged",
+    "MetricsResetTimeStamp",
 )
 
 SCM_JMX_KEYS = (
@@ -90,8 +90,8 @@ SCM_JMX_KEYS = (
     "NumBlockDeletionTransactionFailureOnDatanodes",
     "NumBlockDeletionTransactionCompleted",
     "NumBlockDeletionTransactionCreated",
-    "NumBlockDeletionTransactions",
-    "NumBlockOfAllDeletionTransactions",
+    "numBlockDeletionTransactions",
+    "numBlockOfAllDeletionTransactions",
 )
 
 DN_JMX_KEYS = (
@@ -113,7 +113,16 @@ _COMPONENT_ACTIONS: Dict[str, str] = {
 
 
 def _pick_metrics(bean: Dict[str, object], keys: tuple) -> Dict[str, object]:
-    return {key: bean[key] for key in keys if key in bean}
+    """Return ``keys`` from ``bean``, matching case-insensitively when needed."""
+
+    lowered = {str(k).lower(): v for k, v in bean.items()}
+    picked: Dict[str, object] = {}
+    for key in keys:
+        if key in bean:
+            picked[key] = bean[key]
+        elif key.lower() in lowered:
+            picked[key] = lowered[key.lower()]
+    return picked
 
 
 def _halve_duration(value: str) -> str:
@@ -249,10 +258,75 @@ class DeletionNotProgressingPlugin(AlertDiagnosticPlugin):
             notes.append(f"Could not reach {endpoint_label} config endpoint: {exc}")
             return {}
 
+    def evaluate_alert(self, context: DiagnosticContext) -> Tuple[bool, str]:
+        component = deletion_component(context.alert)
+        metrics = context.jmx_metrics
+
+        if not metrics:
+            return False, (
+                f"Could not collect {component} deletion-service JMX metrics, so the "
+                "backlog claimed by the alert could not be independently verified."
+            )
+
+        if component == COMPONENT_SCM:
+            pending = metrics.get("numBlockDeletionTransactions")
+            completed = metrics.get("NumBlockDeletionTransactionCompleted")
+            if isinstance(pending, (int, float)) and isinstance(completed, (int, float)):
+                backlog = pending - completed
+                if backlog <= 0:
+                    return False, (
+                        f"numBlockDeletionTransactions ({pending}) is not ahead of "
+                        f"NumBlockDeletionTransactionCompleted ({completed}); SCM has no "
+                        "outstanding block-deletion backlog right now, so this alert may "
+                        "be stale or already resolved."
+                    )
+                return True, (
+                    f"SCM has {backlog} block-deletion transaction(s) pending completion "
+                    f"(numBlockDeletionTransactions={pending}, "
+                    f"NumBlockDeletionTransactionCompleted={completed}), confirming a backlog."
+                )
+
+        elif component == COMPONENT_DATANODE:
+            pending = metrics.get("TotalPendingBlockCount")
+            if isinstance(pending, (int, float)):
+                if pending <= 0:
+                    return False, (
+                        "TotalPendingBlockCount is 0; this datanode has no pending "
+                        "block deletions right now, so this alert may be stale or "
+                        "already resolved."
+                    )
+                return True, (
+                    f"TotalPendingBlockCount={pending} confirms blocks are still "
+                    "waiting to be deleted on this datanode."
+                )
+
+        else:
+            processed = metrics.get("NumKeysProcessed")
+            purged = metrics.get("NumKeysPurged")
+            if isinstance(processed, (int, float)) and isinstance(purged, (int, float)):
+                backlog = processed - purged
+                if backlog <= 0:
+                    return False, (
+                        f"NumKeysProcessed ({processed}) is not ahead of NumKeysPurged "
+                        f"({purged}); OM has no outstanding key-deletion backlog right "
+                        "now, so this alert may be stale or already resolved."
+                    )
+                return True, (
+                    f"OM has {backlog} key(s) processed but not yet purged "
+                    f"(NumKeysProcessed={processed}, NumKeysPurged={purged}), "
+                    "confirming a backlog."
+                )
+
+        return True, (
+            f"{component} JMX metrics were collected but did not include the "
+            "specific counters needed to confirm backlog size; treating the "
+            "alert as unverified-but-plausible."
+        )
+
     def retrieval_query(self, context: DiagnosticContext) -> str:
         component = deletion_component(context.alert)
         if component == COMPONENT_SCM:
-            pending = context.jmx_metrics.get("NumBlockDeletionTransactions", "unknown")
+            pending = context.jmx_metrics.get("numBlockDeletionTransactions", "unknown")
             completed = context.jmx_metrics.get("NumBlockDeletionTransactionCompleted", "unknown")
             limit = context.config_properties.get(
                 "hdds.scm.block.deletion.per-interval.max", "unknown"
@@ -260,7 +334,7 @@ class DeletionNotProgressingPlugin(AlertDiagnosticPlugin):
             return (
                 "Ozone SCM block deletion backlog not draining. "
                 f"numBlockDeletionTransactions={pending} "
-                f"numBlockDeletionTransactionCompleted={completed} "
+                f"NumBlockDeletionTransactionCompleted={completed} "
                 f"hdds.scm.block.deletion.per-interval.max={limit}. "
                 "DeletedBlockLog, datanode deletion command acks, SCM block "
                 "deleting service interval."
@@ -280,12 +354,12 @@ class DeletionNotProgressingPlugin(AlertDiagnosticPlugin):
                 "BlockDeletingService, container lock timeouts, DN disk issues."
             )
 
-        processed = context.jmx_metrics.get("numKeysProcessed", "unknown")
-        purged = context.jmx_metrics.get("numKeysPurged", "unknown")
+        processed = context.jmx_metrics.get("NumKeysProcessed", "unknown")
+        purged = context.jmx_metrics.get("NumKeysPurged", "unknown")
         limit = context.config_properties.get("ozone.key.deleting.limit.per.task", "unknown")
         return (
             "Ozone OM key deletion service (KeyDeletingService) not progressing. "
-            f"numKeysProcessed={processed} numKeysPurged={purged} "
+            f"NumKeysProcessed={processed} NumKeysPurged={purged} "
             f"ozone.key.deleting.limit.per.task={limit}. "
             "Deep cleaning, snapshot chain, deleted table backlog, "
             "block deletion pipeline."

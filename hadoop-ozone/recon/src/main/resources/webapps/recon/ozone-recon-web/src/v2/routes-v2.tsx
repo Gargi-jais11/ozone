@@ -30,6 +30,7 @@ const Capacity = lazy(() => import('@/v2/pages/capacity/capacity'));
 const Heatmap = lazy(() => import('@/v2/pages/heatmap/heatmap'));
 const Assistant = lazy(() => import('@/v2/pages/assistant/assistant'));
 const Alerts = lazy(() => import('@/views/alerts/alerts'));
+const AlertDiagnose = lazy(() => import('@/views/alerts/alertDiagnose'));
 
 
 export const routesV2 = [
@@ -80,6 +81,10 @@ export const routesV2 = [
   {
     path: '/Assistant',
     component: Assistant
+  },
+  {
+    path: '/Alerts/Diagnose/:alertId',
+    component: AlertDiagnose
   },
   {
     path: '/Alerts',

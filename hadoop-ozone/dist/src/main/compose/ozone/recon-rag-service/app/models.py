@@ -78,7 +78,12 @@ class RecommendedFix(BaseModel):
 
 class DiagnosisResponse(BaseModel):
     alert_type: str
-    diagnosis: str
+    alert_confirmed: bool = True
+    verdict_reason: str = ""
+    what_happened: str
+    why_it_happened: str
+    how_to_fix: str
+    diagnosis: str = ""
     evidence: List[str] = Field(default_factory=list)
     recommended_fix: Optional[RecommendedFix] = None
     retrieved_documents: List[RetrievedDocument] = Field(default_factory=list)

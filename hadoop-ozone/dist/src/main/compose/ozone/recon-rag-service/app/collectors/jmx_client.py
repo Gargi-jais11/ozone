@@ -59,13 +59,15 @@ def merge_bean_attributes(beans: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     SCMBlockDeletingServiceMetrics publishes counters on the main bean and
     backlog gauges on additional records with the same ``name=`` query; merging
-    gives the plugin one flat metrics map.
+    gives the plugin one flat metrics map. Keys ending in ``.N`` (RocksDB-style
+    suffixes on some SCM gauges) are normalized to their base name.
     """
 
     merged: Dict[str, Any] = {}
     for bean in beans:
         for key, value in bean.items():
-            if key in ("name", "modelerType"):
+            if key in ("name", "modelerType") or key.startswith("tag."):
                 continue
-            merged[key] = value
+            base_key = key.rsplit(".", 1)[0] if key.rsplit(".", 1)[-1].isdigit() else key
+            merged[base_key] = value
     return merged

@@ -75,27 +75,43 @@ class MockLLMClient(LLMClient):
             evidence.append(f"Matched runbook(s): {', '.join(retrieved_sources)}")
 
         recommended_fix = None
+        what_happened = ""
+        why_it_happened = ""
+        how_to_fix = ""
         if not jmx_metrics and not config_properties:
-            diagnosis = (
-                f"Could not collect deletion-service telemetry from the {component} "
-                "JMX/config endpoints, so the root cause cannot be confirmed. "
-                "Restore connectivity and retry diagnosis."
+            what_happened = (
+                f"The {component} deletion alert fired but recon-rag-service could "
+                "not collect JMX metrics or configuration from the cluster."
+            )
+            why_it_happened = (
+                "The JMX or /conf endpoint may be unreachable, misconfigured, or "
+                "the deletion service may not have started on that component."
+            )
+            how_to_fix = (
+                "Verify network connectivity to the component HTTP endpoint, confirm "
+                "the deletion service is running, then retry diagnosis."
             )
         elif component == "scm":
-            pending = jmx_metrics.get("NumBlockDeletionTransactions")
+            pending = jmx_metrics.get("numBlockDeletionTransactions")
             completed = jmx_metrics.get("NumBlockDeletionTransactionCompleted")
-            diagnosis = (
-                "SCM block deletion metrics show a backlog with little or no "
-                f"forward progress (NumBlockDeletionTransactions={pending}, "
-                f"NumBlockDeletionTransactionCompleted={completed}). This commonly "
-                "happens when datanodes are unavailable or slow to acknowledge "
-                "deletion commands, or when "
-                "hdds.scm.block.deletion.per-interval.max is too low for the "
-                "current DeletedBlockLog backlog."
+            what_happened = (
+                "SCM block deletion is not progressing: the DeletedBlockLog backlog "
+                f"is not draining (numBlockDeletionTransactions={pending}, "
+                f"NumBlockDeletionTransactionCompleted={completed})."
+            )
+            why_it_happened = (
+                "Datanodes may be unavailable or slow to acknowledge deletion "
+                "commands, or hdds.scm.block.deletion.per-interval.max may be too "
+                "low for the current backlog volume."
             )
             prop = "hdds.scm.block.deletion.per-interval.max"
             current_limit = config_properties.get(prop)
             proposed_limit = int(current_limit) * 2 if current_limit else 1000000
+            how_to_fix = (
+                f"Increase {prop} from {current_limit or 'default'} to "
+                f"{proposed_limit} so SCM sends more block-deletion commands per "
+                "interval. Also verify datanode health and deletion command acks."
+            )
             recommended_fix = {
                 "action_id": "increase_scm_block_deletion_per_interval_max",
                 "summary": "Increase SCM block deletion throughput per interval.",
@@ -109,16 +125,23 @@ class MockLLMClient(LLMClient):
             pending = jmx_metrics.get("TotalPendingBlockCount")
             success = jmx_metrics.get("SuccessCount")
             instance = alert_labels.get("instance", "datanode")
-            diagnosis = (
-                f"Datanode {instance} block deletion metrics show pending blocks "
-                f"with little or no forward progress (TotalPendingBlockCount="
-                f"{pending}, SuccessCount={success}). This commonly happens when "
-                "ozone.block.deleting.service.interval is too large, container "
-                "locks time out, or the datanode disk is unhealthy."
+            what_happened = (
+                f"Datanode {instance} block deletion is stalled: pending blocks are "
+                f"not being cleared (TotalPendingBlockCount={pending}, "
+                f"SuccessCount={success})."
+            )
+            why_it_happened = (
+                "ozone.block.deleting.service.interval may be too large, container "
+                "locks may be timing out, or the datanode disk may be unhealthy."
             )
             prop = "ozone.block.deleting.service.interval"
             current_interval = config_properties.get(prop, "60s")
             proposed_interval = self._halve_duration(current_interval)
+            how_to_fix = (
+                f"Halve {prop} from {current_interval} to {proposed_interval} on "
+                f"{instance} so BlockDeletingService runs more frequently. Check "
+                "datanode logs for lock timeouts and disk errors."
+            )
             recommended_fix = {
                 "action_id": "decrease_datanode_block_deleting_interval",
                 "summary": "Run BlockDeletingService more frequently on the datanode.",
@@ -129,18 +152,26 @@ class MockLLMClient(LLMClient):
                 ),
             }
         else:
-            processed = jmx_metrics.get("numKeysProcessed")
-            purged = jmx_metrics.get("numKeysPurged")
-            diagnosis = (
-                "KeyDeletingService metrics were retrieved but show little or no "
-                f"forward progress (numKeysProcessed={processed}, "
-                f"numKeysPurged={purged}). This commonly happens when "
-                "ozone.key.deleting.limit.per.task is too small for the current "
-                "backlog, or a downstream dependency (snapshot deep cleaning, "
-                "block deletion pipeline) is itself stalled."
+            processed = jmx_metrics.get("NumKeysProcessed")
+            purged = jmx_metrics.get("NumKeysPurged")
+            what_happened = (
+                "OM key deletion (KeyDeletingService) is not progressing: keys are "
+                f"being processed slowly or not purged (NumKeysProcessed={processed}, "
+                f"NumKeysPurged={purged})."
+            )
+            why_it_happened = (
+                "ozone.key.deleting.limit.per.task may be too small for the backlog, "
+                "or a downstream dependency (snapshot deep cleaning, SCM block "
+                "deletion pipeline) may itself be stalled."
             )
             current_limit = config_properties.get("ozone.key.deleting.limit.per.task")
             proposed_limit = int(current_limit) * 2 if current_limit else 100000
+            how_to_fix = (
+                f"Increase ozone.key.deleting.limit.per.task from "
+                f"{current_limit or 'default'} to {proposed_limit}. If the backlog "
+                "persists, inspect SCM and datanode deletion metrics for downstream "
+                "bottlenecks."
+            )
             recommended_fix = {
                 "action_id": "increase_key_deleting_limit_per_task",
                 "summary": "Increase the per-task key deletion scan limit.",
@@ -156,7 +187,9 @@ class MockLLMClient(LLMClient):
 
         return json.dumps(
             {
-                "diagnosis": diagnosis,
+                "what_happened": what_happened,
+                "why_it_happened": why_it_happened,
+                "how_to_fix": how_to_fix,
                 "evidence": evidence,
                 "recommended_fix": recommended_fix,
             }

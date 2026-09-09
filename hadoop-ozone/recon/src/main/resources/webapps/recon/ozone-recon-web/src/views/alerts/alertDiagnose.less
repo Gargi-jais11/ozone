@@ -1,0 +1,194 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@color-teal-dark: #142329;
+@color-teal-panel: #224452;
+@color-green-brand: #4DCF4C;
+@ai-gradient: linear-gradient(135deg, @color-teal-dark 0%, @color-teal-panel 55%, @color-green-brand 140%);
+
+@keyframes slideFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(77, 207, 76, 0.35); }
+  50% { box-shadow: 0 0 0 8px rgba(77, 207, 76, 0); }
+}
+
+.alert-diagnose-page {
+  min-height: calc(100vh - 120px);
+  background: linear-gradient(to bottom right, #e8edf0, #dce5e8);
+  padding: 24px;
+}
+
+.alert-diagnose-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  .alert-diagnose-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: @color-teal-panel;
+    font-weight: 500;
+
+    &:hover {
+      color: @color-teal-dark;
+    }
+  }
+
+  .alert-diagnose-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    color: @color-teal-dark;
+  }
+}
+
+.alert-summary-card {
+  margin-bottom: 24px;
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 4px 16px rgba(20, 35, 41, 0.08);
+  animation: slideFadeIn 0.4s ease-out;
+
+  .alert-summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+}
+
+.alert-diagnose-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  gap: 16px;
+
+  .loading-icon {
+    font-size: 48px;
+    color: @color-green-brand;
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+
+  .loading-text {
+    font-size: 16px;
+    color: @color-teal-panel;
+  }
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+
+  @media (min-width: 992px) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.analysis-card {
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 4px 16px rgba(20, 35, 41, 0.08);
+  animation: slideFadeIn 0.5s ease-out backwards;
+  overflow: hidden;
+
+  &:nth-child(1) { animation-delay: 0.05s; }
+  &:nth-child(2) { animation-delay: 0.12s; }
+  &:nth-child(3) { animation-delay: 0.19s; grid-column: 1 / -1; }
+
+  .analysis-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    background: @ai-gradient;
+    color: #fff;
+
+    .analysis-icon {
+      font-size: 22px;
+      color: #fff;
+      opacity: 0.95;
+    }
+
+    h3.analysis-heading {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #fff;
+    }
+  }
+
+  .analysis-card-body {
+    padding: 20px;
+    font-size: 15px;
+    line-height: 1.65;
+    color: #2c3e50;
+    white-space: pre-wrap;
+  }
+
+  &.analysis-card-what .analysis-card-header {
+    background: linear-gradient(135deg, #1a3a4a 0%, #2d5a6b 100%);
+  }
+
+  &.analysis-card-why .analysis-card-header {
+    background: linear-gradient(135deg, #3d2c5a 0%, #5a4080 100%);
+  }
+
+  &.analysis-card-fix .analysis-card-header {
+    background: linear-gradient(135deg, @color-teal-dark 0%, #1a5c40 70%, @color-green-brand 140%);
+  }
+}
+
+.alert-diagnose-extra {
+  margin-top: 24px;
+
+  .ant-collapse {
+    border-radius: 12px;
+    overflow: hidden;
+    border: none;
+    box-shadow: 0 2px 8px rgba(20, 35, 41, 0.06);
+  }
+}
+
+.remediation-card {
+  margin-top: 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(77, 207, 76, 0.3);
+  background: rgba(255, 255, 255, 0.85);
+
+  .remediation-actions {
+    margin-top: 12px;
+  }
+}

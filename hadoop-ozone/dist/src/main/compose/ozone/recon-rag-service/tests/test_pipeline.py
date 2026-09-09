@@ -52,7 +52,7 @@ class FakeLLMClient(LLMClient):
 def _context(**config_properties: str) -> DiagnosticContext:
     return DiagnosticContext(
         alert=ALERT,
-        jmx_metrics={"numKeysProcessed": 10, "numKeysPurged": 1},
+        jmx_metrics={"NumKeysProcessed": 10, "NumKeysPurged": 1},
         config_properties=config_properties,
         notes=[],
     )
@@ -61,7 +61,9 @@ def _context(**config_properties: str) -> DiagnosticContext:
 def test_diagnose_parses_valid_json_and_keeps_permitted_fix():
     reply = json.dumps(
         {
-            "diagnosis": "backlog too large",
+            "what_happened": "Key deletion backlog is growing.",
+            "why_it_happened": "Scan limit is too low.",
+            "how_to_fix": "Double ozone.key.deleting.limit.per.task.",
             "evidence": ["numKeysProcessed=10"],
             "recommended_fix": {
                 "action_id": INCREASE_KEY_DELETING_LIMIT,
@@ -78,7 +80,9 @@ def test_diagnose_parses_valid_json_and_keeps_permitted_fix():
         DeletionNotProgressingPlugin(),
     )
 
-    assert response.diagnosis == "backlog too large"
+    assert response.what_happened == "Key deletion backlog is growing."
+    assert response.why_it_happened == "Scan limit is too low."
+    assert response.how_to_fix == "Double ozone.key.deleting.limit.per.task."
     assert response.recommended_fix.action_id == INCREASE_KEY_DELETING_LIMIT
     assert response.retrieved_documents[0].source == "fake.md"
 
@@ -86,7 +90,9 @@ def test_diagnose_parses_valid_json_and_keeps_permitted_fix():
 def test_diagnose_drops_unpermitted_action_id():
     reply = json.dumps(
         {
-            "diagnosis": "x",
+            "what_happened": "x",
+            "why_it_happened": "y",
+            "how_to_fix": "z",
             "evidence": [],
             "recommended_fix": {
                 "action_id": "delete_all_the_data",
@@ -104,10 +110,84 @@ def test_diagnose_drops_unpermitted_action_id():
     assert any("unpermitted" in note for note in response.evidence)
 
 
+def test_diagnose_falls_back_to_legacy_diagnosis_field():
+    reply = json.dumps(
+        {
+            "diagnosis": "legacy combined summary",
+            "evidence": ["note"],
+            "recommended_fix": {
+                "action_id": INCREASE_KEY_DELETING_LIMIT,
+                "summary": "double the limit",
+                "config_changes": {"ozone.key.deleting.limit.per.task": "100000"},
+                "rationale": "because backlog",
+            },
+        }
+    )
+    pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
+
+    response = pipeline.diagnose(_context(), DeletionNotProgressingPlugin())
+
+    assert response.what_happened == "legacy combined summary"
+    assert response.how_to_fix.startswith("double the limit")
+
+
+def test_diagnose_parses_json_wrapped_in_markdown_fences():
+    reply = """```json
+{
+  "what_happened": "OM deletion stalled",
+  "why_it_happened": "limit too low",
+  "how_to_fix": "increase limit",
+  "evidence": [],
+  "recommended_fix": {
+    "action_id": "increase_key_deleting_limit_per_task",
+    "summary": "double the limit",
+    "config_changes": {"ozone.key.deleting.limit.per.task": "100000"},
+    "rationale": "because"
+  }
+}
+```"""
+    pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
+
+    response = pipeline.diagnose(_context(), DeletionNotProgressingPlugin())
+
+    assert response.what_happened == "OM deletion stalled"
+    assert response.recommended_fix.action_id == INCREASE_KEY_DELETING_LIMIT
+
+
 def test_diagnose_handles_malformed_json_reply():
     pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient("not json at all"))
 
     response = pipeline.diagnose(_context(), DeletionNotProgressingPlugin())
 
-    assert "could not be parsed" in response.diagnosis.lower()
+    assert "could not be parsed" in response.what_happened.lower()
     assert response.recommended_fix is None
+
+
+def test_diagnose_suppresses_fix_when_alert_not_confirmed():
+    reply = json.dumps(
+        {
+            "what_happened": "backlog too large",
+            "why_it_happened": "scan limit too low",
+            "how_to_fix": "double the limit",
+            "evidence": [],
+            "recommended_fix": {
+                "action_id": INCREASE_KEY_DELETING_LIMIT,
+                "summary": "double the limit",
+                "config_changes": {"ozone.key.deleting.limit.per.task": "100000"},
+                "rationale": "because",
+            },
+        }
+    )
+    pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
+
+    no_backlog_context = DiagnosticContext(
+        alert=ALERT,
+        jmx_metrics={"NumKeysProcessed": 10, "NumKeysPurged": 10},
+        config_properties={},
+        notes=[],
+    )
+    response = pipeline.diagnose(no_backlog_context, DeletionNotProgressingPlugin())
+
+    assert response.alert_confirmed is False
+    assert response.recommended_fix is None
+    assert any("suppressed" in note for note in response.evidence)

@@ -160,8 +160,23 @@ components:
       properties:
         alert_type:
           type: string
+        alert_confirmed:
+          type: boolean
+          description: >-
+            Deterministic verdict computed from JMX metrics/config, independent
+            of the LLM: whether the collected evidence actually supports the
+            alert firing (false may mean the alert is stale/already resolved).
+        verdict_reason:
+          type: string
+        what_happened:
+          type: string
+        why_it_happened:
+          type: string
+        how_to_fix:
+          type: string
         diagnosis:
           type: string
+          description: Legacy combined summary; prefer what_happened/why_it_happened/how_to_fix.
         evidence:
           type: array
           items:

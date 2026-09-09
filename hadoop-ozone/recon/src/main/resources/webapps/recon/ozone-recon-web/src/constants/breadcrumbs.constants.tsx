@@ -32,5 +32,6 @@ export const breadcrumbNameMap: IBreadcrumbNameMap = {
   '/NamespaceUsage': 'Namespace Usage',
   '/Heatmap': 'Heatmap',
   '/Om': 'Om',
-  '/Alerts': 'Alerts'
+  '/Alerts': 'Alerts',
+  '/Alerts/Diagnose': 'Diagnosis'
 };

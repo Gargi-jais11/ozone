@@ -89,7 +89,32 @@ def test_diagnose_returns_a_diagnosis():
     assert response.status_code == 200
     body = response.json()
     assert body["alert_type"] == "OzoneOmDeletionNotProgressing"
-    assert body["diagnosis"]
+    assert body["alert_confirmed"] is True
+    assert body["verdict_reason"]
+    assert body["what_happened"]
+    assert body["why_it_happened"]
+    assert body["how_to_fix"]
+
+
+@respx.mock
+def test_diagnose_flags_unconfirmed_alert_when_no_backlog():
+    respx.get("http://om:9874/jmx").mock(
+        return_value=Response(
+            200,
+            json={"beans": [{"NumKeysProcessed": 10, "NumKeysPurged": 10}]},
+        )
+    )
+    respx.get("http://om:9874/conf").mock(
+        return_value=Response(
+            200,
+            json={"properties": [{"key": "ozone.key.deleting.limit.per.task", "value": "50000"}]},
+        )
+    )
+    response = client.post("/api/v1/diagnose", json=ALERT_PAYLOAD)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["alert_confirmed"] is False
+    assert body["recommended_fix"] is None
 
 
 @respx.mock

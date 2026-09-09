@@ -30,6 +30,7 @@ import { Heatmap } from './views/heatMap/heatmap';
 import { Volumes } from './views/volumes/volumes';
 import { Buckets } from './views/buckets/buckets';
 import { Alerts } from './views/alerts/alerts';
+import AlertDiagnose from './views/alerts/alertDiagnose';
 
 export const routes: IRoute[] = [
   {
@@ -75,6 +76,10 @@ export const routes: IRoute[] = [
   {
     path: '/Heatmap',
     component: Heatmap
+  },
+  {
+    path: '/Alerts/Diagnose/:alertId',
+    component: AlertDiagnose
   },
   {
     path: '/Alerts',

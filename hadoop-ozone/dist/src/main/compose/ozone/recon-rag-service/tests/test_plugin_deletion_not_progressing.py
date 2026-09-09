@@ -79,8 +79,8 @@ def test_collect_context_om_happy_path():
 
     context = DeletionNotProgressingPlugin().collect_context(OM_ALERT, CLUSTER)
 
-    assert context.jmx_metrics["numKeysProcessed"] == 100
-    assert context.jmx_metrics["numKeysPurged"] == 20
+    assert context.jmx_metrics["NumKeysProcessed"] == 100
+    assert context.jmx_metrics["NumKeysPurged"] == 20
     assert context.config_properties == {"ozone.key.deleting.limit.per.task": "50000"}
     assert any("Deletion hop under diagnosis: om" in note for note in context.notes)
 
@@ -98,7 +98,7 @@ def test_collect_context_scm_happy_path():
                     },
                     {
                         "name": SCM_BLOCK_DELETING_JMX_QUERY,
-                        "NumBlockDeletionTransactions": 42,
+                        "numBlockDeletionTransactions.1": 42,
                     },
                 ]
             },
@@ -117,7 +117,7 @@ def test_collect_context_scm_happy_path():
 
     context = DeletionNotProgressingPlugin().collect_context(SCM_ALERT, CLUSTER)
 
-    assert context.jmx_metrics["NumBlockDeletionTransactions"] == 42
+    assert context.jmx_metrics["numBlockDeletionTransactions"] == 42
     assert context.jmx_metrics["NumBlockDeletionTransactionCompleted"] == 10
     assert context.config_properties["hdds.scm.block.deletion.per-interval.max"] == "500000"
     assert any("Deletion hop under diagnosis: scm" in note for note in context.notes)
@@ -262,3 +262,67 @@ def test_build_remediation_plan_rejects_wrong_action_for_component():
     context = DiagnosticContext(alert=SCM_ALERT)
     with pytest.raises(ValueError, match="not valid for deletion hop 'scm'"):
         DeletionNotProgressingPlugin().build_remediation_plan(INCREASE_KEY_DELETING_LIMIT, context)
+
+
+def test_evaluate_alert_no_metrics_is_unconfirmed():
+    confirmed, reason = DeletionNotProgressingPlugin().evaluate_alert(
+        DiagnosticContext(alert=OM_ALERT)
+    )
+    assert confirmed is False
+    assert "not be collect" in reason.lower() or "could not collect" in reason.lower()
+
+
+def test_evaluate_alert_om_confirms_real_backlog():
+    context = DiagnosticContext(
+        alert=OM_ALERT,
+        jmx_metrics={"NumKeysProcessed": 100, "NumKeysPurged": 20},
+    )
+    confirmed, reason = DeletionNotProgressingPlugin().evaluate_alert(context)
+    assert confirmed is True
+    assert "80" in reason
+
+
+def test_evaluate_alert_om_flags_likely_false_positive():
+    context = DiagnosticContext(
+        alert=OM_ALERT,
+        jmx_metrics={"NumKeysProcessed": 100, "NumKeysPurged": 100},
+    )
+    confirmed, reason = DeletionNotProgressingPlugin().evaluate_alert(context)
+    assert confirmed is False
+    assert "stale" in reason.lower() or "resolved" in reason.lower()
+
+
+def test_evaluate_alert_scm_confirms_real_backlog():
+    context = DiagnosticContext(
+        alert=SCM_ALERT,
+        jmx_metrics={"numBlockDeletionTransactions": 42, "NumBlockDeletionTransactionCompleted": 10},
+    )
+    confirmed, reason = DeletionNotProgressingPlugin().evaluate_alert(context)
+    assert confirmed is True
+
+
+def test_evaluate_alert_scm_flags_likely_false_positive():
+    context = DiagnosticContext(
+        alert=SCM_ALERT,
+        jmx_metrics={"numBlockDeletionTransactions": 10, "NumBlockDeletionTransactionCompleted": 10},
+    )
+    confirmed, reason = DeletionNotProgressingPlugin().evaluate_alert(context)
+    assert confirmed is False
+
+
+def test_evaluate_alert_datanode_confirms_real_backlog():
+    context = DiagnosticContext(
+        alert=DN_ALERT,
+        jmx_metrics={"TotalPendingBlockCount": 15},
+    )
+    confirmed, reason = DeletionNotProgressingPlugin().evaluate_alert(context)
+    assert confirmed is True
+
+
+def test_evaluate_alert_datanode_flags_likely_false_positive():
+    context = DiagnosticContext(
+        alert=DN_ALERT,
+        jmx_metrics={"TotalPendingBlockCount": 0},
+    )
+    confirmed, reason = DeletionNotProgressingPlugin().evaluate_alert(context)
+    assert confirmed is False

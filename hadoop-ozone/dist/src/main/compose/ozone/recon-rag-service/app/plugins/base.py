@@ -22,7 +22,7 @@ layer.
 """
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Tuple
 
 from app.config import ClusterEndpoints
 from app.models import ActionSpec, AlertPayload, DiagnosticContext, RemediationPlan
@@ -48,6 +48,25 @@ class AlertDiagnosticPlugin(ABC):
     def retrieval_query(self, context: DiagnosticContext) -> str:
         """Free text used to look up relevant docs/runbooks in the vector
         store for ``context``."""
+
+    def evaluate_alert(self, context: DiagnosticContext) -> Tuple[bool, str]:
+        """Deterministically sanity-check the alert against the metrics/config
+        just collected, independent of what the LLM concludes.
+
+        Returns (confirmed, reason). ``confirmed=False`` means the collected
+        evidence does not support the alert (e.g. a backlog that has already
+        drained), so it may be stale or a false positive. The default
+        implementation cannot judge without alert-specific knowledge, so it
+        reports an inconclusive verdict; plugins should override this to
+        apply real thresholds against their own metrics.
+        """
+
+        if not context.jmx_metrics and not context.config_properties:
+            return False, (
+                "No metrics or configuration could be collected, so the alert "
+                "condition could not be independently verified."
+            )
+        return True, "Evidence was collected but this plugin does not implement a validity check."
 
     @abstractmethod
     def permitted_actions(self) -> List[ActionSpec]:
