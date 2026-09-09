@@ -115,3 +115,24 @@ architecture) and a new "Alerts" page appears in the Recon UI at
 http://localhost:9888, listing active Prometheus alerts with "Diagnose" and
 "Fix" buttons. This is a personal prototype: remediation is diagnosis +
 dry-run only and never mutates the cluster.
+
+### Triggering the OzoneDeletionNotProgressing alert (demo)
+
+`trigger-deletion-not-progressing-alert.sh` drives a real key-deletion
+backlog on an already-running cluster so the `OzoneDeletionNotProgressing`
+Prometheus alert (`ozone-aiops-alerts.yml`) has a chance to fire, for demos:
+
+```
+./trigger-deletion-not-progressing-alert.sh
+```
+
+It repeatedly writes and deletes a batch of keys, racing a short-lived
+snapshot against each batch to open a gap between OM's `numKeysProcessed`
+and `numKeysPurged` metrics, and polls until that gap holds steady. This
+exploits a timing-dependent race inside OM's purge path, so it does not
+always succeed on the first run; re-run it (or raise `ITERATIONS`) if no gap
+opens. Once a gap opens it still needs to hold for 5 uninterrupted minutes
+(`for: 5m`) before the alert moves from pending to firing; watch it on
+[Prometheus' web UI](http://localhost:9090/alerts) (requires the
+`monitoring` add-on) or on Recon's Alerts page. To reset OM's in-memory
+metrics for a clean repeat: `docker-compose restart om`.
