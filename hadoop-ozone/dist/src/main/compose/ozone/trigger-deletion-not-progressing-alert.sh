@@ -28,14 +28,29 @@
 # chain against the chain state captured when the batch started
 # (OMKeyPurgeRequest#validateAndUpdateCache); if a new snapshot lands on the
 # bucket in between, the purge is rejected and the earlier "processed" count
-# is never repaid. This script repeatedly generates+deletes a batch of keys
-# and races a snapshot create/delete against it, polling the metrics for a
-# stable gap. It is inherently timing-dependent: re-run it (or raise
-# ITERATIONS) if one pass doesn't open a gap.
+# is never repaid.
+#
+# The race window this needs to hit is tiny (well under a second: the time
+# between KeyDeletingService capturing the bucket's expected snapshot ID and
+# the PurgeKeysRequest actually committing through the OM double buffer), but
+# KeyDeletingService itself only wakes up once per
+# ozone.block.deleting.service.interval (default 60s). A single create+sleep
+# 2s+delete per batch is very unlikely to have an active snapshot at the
+# instant some future tick happens to run, which is why processed/purged were
+# observed jumping together in lockstep: by the time the service ticks, the
+# earlier snapshot is long gone. Increasing the deletion interval does not
+# help either -- it only makes ticks rarer, and each tick still updates both
+# metrics synchronously within the same call, so the same lockstep symptom
+# just repeats less often.
+#
+# Instead of timing one snapshot per batch, this script runs a background
+# loop that continuously creates+deletes a snapshot on the bucket for the
+# whole run, turning every KeyDeletingService tick (whenever it happens to
+# land) into a race attempt instead of just one per batch.
 #
 # Usage: ./trigger-deletion-not-progressing-alert.sh
 # Tunables (env vars): VOLUME, BUCKET, BATCH_KEYS, ITERATIONS, POLL_INTERVAL,
-# STABLE_POLLS.
+# STABLE_POLLS, SNAPSHOT_TOGGLE_INTERVAL.
 
 set -u -o pipefail
 
@@ -51,6 +66,7 @@ BATCH_KEYS="${BATCH_KEYS:-300}"
 ITERATIONS="${ITERATIONS:-20}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"
 STABLE_POLLS="${STABLE_POLLS:-3}"
+SNAPSHOT_TOGGLE_INTERVAL="${SNAPSHOT_TOGGLE_INTERVAL:-1}"
 
 om_metric() {
   curl -s http://localhost:9874/prom | grep "^deleting_service_metrics_num_keys_$1{" | awk '{print $NF}'
@@ -62,6 +78,24 @@ echo "metrics used by FSO buckets)..."
 docker-compose exec -T om ozone sh volume create "/$VOLUME" >/dev/null 2>&1
 docker-compose exec -T om ozone sh bucket create -l OBJECT_STORE "/$VOLUME/$BUCKET" >/dev/null 2>&1
 
+# Continuously create+delete a snapshot on the bucket for the whole run, so
+# whichever moment KeyDeletingService actually ticks and commits a
+# PurgeKeysRequest, there is a good chance a snapshot is mid-transition
+# (present at capture time, gone by commit time, or vice versa).
+snapshot_toggle_loop() {
+  local n=0
+  while true; do
+    n=$((n + 1))
+    docker-compose exec -T om ozone sh snapshot create "/$VOLUME/$BUCKET" "race-$$-$n" >/dev/null 2>&1
+    sleep "$SNAPSHOT_TOGGLE_INTERVAL"
+    docker-compose exec -T om ozone sh snapshot delete "/$VOLUME/$BUCKET" "race-$$-$n" >/dev/null 2>&1
+    sleep "$SNAPSHOT_TOGGLE_INTERVAL"
+  done
+}
+snapshot_toggle_loop &
+toggle_pid=$!
+trap 'kill "$toggle_pid" 2>/dev/null' EXIT
+
 prev_gap=-1
 stable_count=0
 
@@ -70,11 +104,6 @@ for i in $(seq 1 "$ITERATIONS"); do
   echo "[$i/$ITERATIONS] writing and deleting $BATCH_KEYS keys (prefix=$prefix)..."
   docker-compose exec -T om ozone freon ockg -t 4 -n "$BATCH_KEYS" -v "$VOLUME" -b "$BUCKET" -p "$prefix" >/dev/null 2>&1
   docker-compose exec -T om ozone freon ockr -t 4 -n "$BATCH_KEYS" -v "$VOLUME" -b "$BUCKET" -p "$prefix" >/dev/null 2>&1
-
-  snap="race-$$-$i"
-  docker-compose exec -T om ozone sh snapshot create "/$VOLUME/$BUCKET" "$snap" >/dev/null 2>&1
-  sleep 2
-  docker-compose exec -T om ozone sh snapshot delete "/$VOLUME/$BUCKET" "$snap" >/dev/null 2>&1
 
   processed=$(om_metric processed)
   purged=$(om_metric purged)

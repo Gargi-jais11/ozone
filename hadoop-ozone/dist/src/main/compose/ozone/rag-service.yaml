@@ -30,6 +30,9 @@ services:
       - OM_HTTP_ADDRESS=om:9874
       - SCM_HTTP_ADDRESS=scm:9876
       - RECON_HTTP_ADDRESS=recon:9888
+      - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-}
+      - RAG_LLM_API_KEY=${RAG_LLM_API_KEY:-}
+      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gpt-4o-mini}
     depends_on:
       - om
       - scm
