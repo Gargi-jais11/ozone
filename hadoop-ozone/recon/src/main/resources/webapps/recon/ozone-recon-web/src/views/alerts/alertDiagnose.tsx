@@ -420,14 +420,6 @@ export class AlertDiagnose extends React.Component<
                 <Collapse.Panel header={`Evidence (${diagnosis.evidence.length})`} key='evidence'>
                   <ul>{diagnosis.evidence.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
                 </Collapse.Panel>}
-              {diagnosis.retrieved_documents.length > 0 &&
-                <Collapse.Panel header='Matched runbooks' key='runbooks'>
-                  {diagnosis.retrieved_documents.map((doc, idx) =>
-                    <div key={idx} style={{ marginBottom: 12 }}>
-                      <Tag>{doc.source}</Tag>
-                      <p style={{ marginTop: 8, marginBottom: 0 }}>{doc.snippet}</p>
-                    </div>)}
-                </Collapse.Panel>}
             </Collapse>
           </div>}
 
