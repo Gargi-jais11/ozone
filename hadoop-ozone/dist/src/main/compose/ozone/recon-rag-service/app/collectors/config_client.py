@@ -22,7 +22,9 @@ ozone-site.xml), so this client always requests an explicit allowlist of
 property names rather than ever dumping the full effective configuration.
 """
 
-from typing import Dict, Iterable
+import json
+import xml.etree.ElementTree as ET
+from typing import Dict, Iterable, Optional
 
 import httpx
 
@@ -34,24 +36,62 @@ class ConfigFetchError(RuntimeError):
     parsed."""
 
 
-def fetch_properties(http_address: str, property_names: Iterable[str]) -> Dict[str, str]:
-    """Fetch ``http://<http_address>/conf?format=json`` and return only the
-    requested property names (missing ones are simply omitted, not errored,
-    since "not overridden" is a valid and common state)."""
-
-    wanted = set(property_names)
-    url = f"http://{http_address}/conf"
-    try:
-        response = httpx.get(
-            url, params={"format": "json"}, timeout=settings.http_client_timeout_seconds
-        )
-        response.raise_for_status()
-        properties = response.json().get("properties", [])
-    except (httpx.HTTPError, ValueError) as exc:
-        raise ConfigFetchError(f"Failed to fetch config from {url}: {exc}") from exc
-
+def _parse_json_properties(body: str) -> Dict[str, str]:
+    payload = json.loads(body)
+    properties = payload.get("properties", [])
     return {
         prop["key"]: prop.get("value", "")
         for prop in properties
-        if prop.get("key") in wanted
+        if prop.get("key")
     }
+
+
+def _parse_xml_properties(body: str) -> Dict[str, str]:
+    root = ET.fromstring(body)
+    parsed: Dict[str, str] = {}
+    for prop in root.findall(".//property"):
+        name_el = prop.find("name")
+        value_el = prop.find("value")
+        if name_el is not None and name_el.text and value_el is not None:
+            parsed[name_el.text.strip()] = (value_el.text or "").strip()
+    return parsed
+
+
+def _load_properties(body: str, expect_json: bool) -> Dict[str, str]:
+    if not body:
+        return {}
+    if expect_json:
+        try:
+            return _parse_json_properties(body)
+        except ValueError:
+            return _parse_xml_properties(body)
+    return _parse_xml_properties(body)
+
+
+def fetch_properties(http_address: str, property_names: Iterable[str]) -> Dict[str, str]:
+    """Fetch ``http://<http_address>/conf`` and return only the requested
+    property names (missing ones are simply omitted).
+
+    Tries ``format=json`` first, then falls back to the default XML response.
+    """
+
+    wanted = set(property_names)
+    url = f"http://{http_address}/conf"
+    last_error: Optional[Exception] = None
+
+    for params in ({"format": "json"}, None):
+        try:
+            response = httpx.get(
+                url, params=params, timeout=settings.http_client_timeout_seconds
+            )
+            response.raise_for_status()
+            all_properties = _load_properties(
+                response.text.strip(), expect_json=params is not None
+            )
+            return {key: value for key, value in all_properties.items() if key in wanted}
+        except httpx.HTTPError as exc:
+            last_error = exc
+        except ET.ParseError as exc:
+            last_error = exc
+
+    raise ConfigFetchError(f"Failed to fetch config from {url}: {last_error}") from last_error

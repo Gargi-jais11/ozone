@@ -55,6 +55,15 @@ class AlertDiagnosticPlugin(ABC):
         propose. The remediation executor rejects any action_id not in this
         list, regardless of what an LLM suggests."""
 
+    def permitted_actions_for(self, context: DiagnosticContext) -> List[ActionSpec]:
+        """Actions that apply to this specific alert instance.
+
+        Plugins with hop- or label-dependent remediations override this;
+        the default returns the full allowlist.
+        """
+
+        return self.permitted_actions()
+
     @abstractmethod
     def build_remediation_plan(
         self, action_id: str, context: DiagnosticContext

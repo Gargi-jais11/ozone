@@ -51,5 +51,21 @@ def fetch_bean(http_address: str, qry: str) -> Dict[str, Any]:
     for ``qry``. Returns an empty dict (rather than raising) if the bean is
     absent, since "the metric doesn't exist" is itself diagnostic evidence."""
 
-    beans = fetch_beans(http_address, qry=qry)
-    return beans[0] if beans else {}
+    return merge_bean_attributes(fetch_beans(http_address, qry=qry))
+
+
+def merge_bean_attributes(beans: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Merge attribute dicts from every JMX bean in ``beans``.
+
+    SCMBlockDeletingServiceMetrics publishes counters on the main bean and
+    backlog gauges on additional records with the same ``name=`` query; merging
+    gives the plugin one flat metrics map.
+    """
+
+    merged: Dict[str, Any] = {}
+    for bean in beans:
+        for key, value in bean.items():
+            if key in ("name", "modelerType"):
+                continue
+            merged[key] = value
+    return merged

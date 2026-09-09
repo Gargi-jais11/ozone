@@ -27,13 +27,27 @@ Defaults below are as declared in
 | `ozone.block.deleting.service.interval` | 1m | How often the datanode block deleting service runs. |
 | `ozone.block.deleting.container.limit.per.interval` | (unset/default) | Caps how many containers are processed for block deletion per interval. |
 | `ozone.snapshot.deep.cleaning.enabled` | true | Whether snapshot deep cleaning reclaims keys held live only by snapshots. |
+| `hdds.scm.block.deletion.per-interval.max` | 500000 | Max block replicas SCM sends for deletion per interval. |
+| `hdds.scm.block.deleting.service.interval` | 60s | How often SCMBlockDeletingService runs. |
 
-## DeletingServiceMetrics (JMX)
+## DeletingServiceMetrics (OM JMX)
 
 Bean name: `Hadoop:service=OzoneManager,name=DeletingServiceMetrics`.
 
-Key fields used for diagnosis: `numKeysProcessed`, `numKeysSentForPurge`,
-`numKeysPurged`, `numDirsSentForPurge`, `numDirsPurged`,
-`metricsResetTimeStamp`. A healthy service shows `numKeysProcessed` and
-`numKeysPurged` increasing across successive scrapes; both staying flat while
-an alert is firing indicates the service made no progress in that window.
+Key fields: `numKeysProcessed`, `numKeysSentForPurge`, `numKeysPurged`,
+`numDirsSentForPurge`, `numDirsPurged`, `metricsResetTimeStamp`.
+
+## SCMBlockDeletingService (SCM JMX)
+
+Bean name: `Hadoop:service=StorageContainerManager,name=SCMBlockDeletingService`.
+
+Key fields: `NumBlockDeletionTransactions` (DeletedBlockLog backlog),
+`NumBlockDeletionTransactionCompleted`, `NumBlockDeletionCommandSent`,
+`NumBlockDeletionCommandSuccess`, `NumBlockDeletionCommandFailure`.
+
+## BlockDeletingService (datanode JMX)
+
+Bean name: `Hadoop:service=HddsDatanode,name=BlockDeletingService`.
+
+Key fields: `TotalPendingBlockCount`, `TotalPendingBlockBytes`, `SuccessCount`,
+`FailureCount`, `ProcessedTransactionFailCount`, `TotalLockTimeoutTransactionCount`.

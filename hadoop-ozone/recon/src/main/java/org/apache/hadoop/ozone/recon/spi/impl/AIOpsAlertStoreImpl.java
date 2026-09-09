@@ -27,7 +27,6 @@ import java.util.Comparator;
 import java.util.List;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import org.apache.hadoop.hdds.utils.db.DBStore;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
 import org.apache.hadoop.ozone.recon.aiops.model.StoredAlert;
@@ -46,15 +45,23 @@ public class AIOpsAlertStoreImpl implements AIOpsAlertStore {
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private Table<String, String> alertTable;
+  private ReconDBProvider reconDBProvider;
 
   @Inject
   public AIOpsAlertStoreImpl(ReconDBProvider reconDBProvider) {
-    initializeTable(reconDBProvider.getDbStore());
+    this.reconDBProvider = reconDBProvider;
+    reinitialize(reconDBProvider);
   }
 
-  private void initializeTable(DBStore dbStore) {
+  @Override
+  public void reinitialize(ReconDBProvider provider) {
+    this.reconDBProvider = provider;
+    initializeTable();
+  }
+
+  private void initializeTable() {
     try {
-      alertTable = AIOPS_ALERTS.getTable(dbStore);
+      alertTable = AIOPS_ALERTS.getTable(reconDBProvider.getDbStore());
     } catch (IOException e) {
       LOG.error("Unable to open AIOps alerts table.", e);
     }

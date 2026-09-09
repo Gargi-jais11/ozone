@@ -29,17 +29,25 @@ from app.plugins.base import AlertDiagnosticPlugin
 _REGISTRY: Dict[str, AlertDiagnosticPlugin] = {}
 
 
-def register_plugin(plugin_cls: Type[AlertDiagnosticPlugin]) -> Type[AlertDiagnosticPlugin]:
-    """Class decorator: instantiates ``plugin_cls`` and registers it under
-    its declared ``alert_type``."""
+def register_plugin(
+    *extra_alert_types: str,
+) -> Type[AlertDiagnosticPlugin]:
+    """Class decorator: registers ``plugin_cls`` under its ``alert_type`` and
+    any additional Prometheus ``alertname`` values listed in
+    ``extra_alert_types``."""
 
-    instance = plugin_cls()
-    if instance.alert_type in _REGISTRY:
-        raise ValueError(
-            f"Duplicate plugin registration for alert_type={instance.alert_type!r}"
-        )
-    _REGISTRY[instance.alert_type] = instance
-    return plugin_cls
+    def decorator(plugin_cls: Type[AlertDiagnosticPlugin]) -> Type[AlertDiagnosticPlugin]:
+        instance = plugin_cls()
+        alert_types = (instance.alert_type,) + extra_alert_types
+        for alert_type in alert_types:
+            if alert_type in _REGISTRY:
+                raise ValueError(
+                    f"Duplicate plugin registration for alert_type={alert_type!r}"
+                )
+            _REGISTRY[alert_type] = instance
+        return plugin_cls
+
+    return decorator
 
 
 def get_plugin(alert_type: str) -> AlertDiagnosticPlugin:

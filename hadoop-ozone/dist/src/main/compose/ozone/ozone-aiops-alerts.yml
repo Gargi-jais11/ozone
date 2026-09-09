@@ -14,28 +14,225 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Prometheus alerting rules for the recon-rag-service prototype (see
-# recon-rag-service/README.md). Recon's Alerts page reads active alerts
-# straight from Prometheus's own /api/v1/alerts, so these rules are the only
-# thing that makes an alert exist -- there is no Alertmanager in this build.
+# Three deletion-stuck alerts (OM, SCM, datanode). Each alertname is a single
+# Prometheus rule; severity is derived from how long the condition has held:
+#   5m -> low | 30m -> medium | 1h -> high | 24h -> critical
 #
-# alertname must match app/plugins/*.py's `alert_type` exactly, since that is
-# how recon-rag-service picks which plugin diagnoses the alert.
+# alertname must match app/plugins/deletion_not_progressing.py. Alertmanager
+# inhibition (alertmanager.yml) suppresses lower severities when a higher tier
+# is active for the same alertname + component + instance.
 groups:
-  - name: ozone-aiops-alerts
+  - name: ozone-aiops-deletion
     rules:
-      - alert: OzoneDeletionNotProgressing
-        expr: >-
-          rate(deleting_service_metrics_num_keys_purged[10m]) == 0
-          and
-          deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
-        for: 5m
+      - alert: OzoneOmDeletionNotProgressing
+        expr: |
+          label_replace(
+            count_over_time(
+              (
+                rate(deleting_service_metrics_num_keys_purged[10m]) == 0
+                and deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
+              )[24h:1m]
+            ) >= 1440,
+            "severity", "critical", "", ""
+          )
+          or label_replace(
+            (
+              count_over_time(
+                (
+                  rate(deleting_service_metrics_num_keys_purged[10m]) == 0
+                  and deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
+                )[1h:1m]
+              ) >= 60
+              unless count_over_time(
+                (
+                  rate(deleting_service_metrics_num_keys_purged[10m]) == 0
+                  and deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
+                )[24h:1m]
+              ) >= 1440
+            ),
+            "severity", "high", "", ""
+          )
+          or label_replace(
+            (
+              count_over_time(
+                (
+                  rate(deleting_service_metrics_num_keys_purged[10m]) == 0
+                  and deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
+                )[30m:1m]
+              ) >= 30
+              unless count_over_time(
+                (
+                  rate(deleting_service_metrics_num_keys_purged[10m]) == 0
+                  and deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
+                )[1h:1m]
+              ) >= 60
+            ),
+            "severity", "medium", "", ""
+          )
+          or label_replace(
+            (
+              count_over_time(
+                (
+                  rate(deleting_service_metrics_num_keys_purged[10m]) == 0
+                  and deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
+                )[5m:1m]
+              ) >= 5
+              unless count_over_time(
+                (
+                  rate(deleting_service_metrics_num_keys_purged[10m]) == 0
+                  and deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
+                )[30m:1m]
+              ) >= 30
+            ),
+            "severity", "low", "", ""
+          )
         labels:
-          severity: warning
           component: om
         annotations:
-          summary: "Ozone Manager key deletion is not progressing"
+          summary: "OM key deletion not progressing ({{ $labels.severity }})"
           description: >-
-            KeyDeletingService has keys queued for purge
-            (numKeysProcessed > numKeysPurged) but the purge rate has been
-            zero for 5 minutes.
+            KeyDeletingService backlog on {{ $labels.instance }} with zero
+            purge rate. Severity tier {{ $labels.severity }} from duration
+            the condition has held.
+
+      - alert: OzoneScmDeletionNotProgressing
+        expr: |
+          label_replace(
+            count_over_time(
+              (
+                scm_block_deleting_service_num_block_deletion_transactions > 0
+                and rate(scm_block_deleting_service_num_block_deletion_transaction_completed[10m]) == 0
+              )[24h:1m]
+            ) >= 1440,
+            "severity", "critical", "", ""
+          )
+          or label_replace(
+            (
+              count_over_time(
+                (
+                  scm_block_deleting_service_num_block_deletion_transactions > 0
+                  and rate(scm_block_deleting_service_num_block_deletion_transaction_completed[10m]) == 0
+                )[1h:1m]
+              ) >= 60
+              unless count_over_time(
+                (
+                  scm_block_deleting_service_num_block_deletion_transactions > 0
+                  and rate(scm_block_deleting_service_num_block_deletion_transaction_completed[10m]) == 0
+                )[24h:1m]
+              ) >= 1440
+            ),
+            "severity", "high", "", ""
+          )
+          or label_replace(
+            (
+              count_over_time(
+                (
+                  scm_block_deleting_service_num_block_deletion_transactions > 0
+                  and rate(scm_block_deleting_service_num_block_deletion_transaction_completed[10m]) == 0
+                )[30m:1m]
+              ) >= 30
+              unless count_over_time(
+                (
+                  scm_block_deleting_service_num_block_deletion_transactions > 0
+                  and rate(scm_block_deleting_service_num_block_deletion_transaction_completed[10m]) == 0
+                )[1h:1m]
+              ) >= 60
+            ),
+            "severity", "medium", "", ""
+          )
+          or label_replace(
+            (
+              count_over_time(
+                (
+                  scm_block_deleting_service_num_block_deletion_transactions > 0
+                  and rate(scm_block_deleting_service_num_block_deletion_transaction_completed[10m]) == 0
+                )[5m:1m]
+              ) >= 5
+              unless count_over_time(
+                (
+                  scm_block_deleting_service_num_block_deletion_transactions > 0
+                  and rate(scm_block_deleting_service_num_block_deletion_transaction_completed[10m]) == 0
+                )[30m:1m]
+              ) >= 30
+            ),
+            "severity", "low", "", ""
+          )
+        labels:
+          component: scm
+        annotations:
+          summary: "SCM block deletion backlog not draining ({{ $labels.severity }})"
+          description: >-
+            DeletedBlockLog on {{ $labels.instance }} with zero completed
+            transaction rate. Severity tier {{ $labels.severity }} from duration
+            the condition has held.
+
+      - alert: OzoneDatanodeDeletionNotProgressing
+        expr: |
+          label_replace(
+            count_over_time(
+              (
+                block_deleting_service_total_pending_block_count > 0
+                and rate(block_deleting_service_success_count[10m]) == 0
+              )[24h:1m]
+            ) >= 1440,
+            "severity", "critical", "", ""
+          )
+          or label_replace(
+            (
+              count_over_time(
+                (
+                  block_deleting_service_total_pending_block_count > 0
+                  and rate(block_deleting_service_success_count[10m]) == 0
+                )[1h:1m]
+              ) >= 60
+              unless count_over_time(
+                (
+                  block_deleting_service_total_pending_block_count > 0
+                  and rate(block_deleting_service_success_count[10m]) == 0
+                )[24h:1m]
+              ) >= 1440
+            ),
+            "severity", "high", "", ""
+          )
+          or label_replace(
+            (
+              count_over_time(
+                (
+                  block_deleting_service_total_pending_block_count > 0
+                  and rate(block_deleting_service_success_count[10m]) == 0
+                )[30m:1m]
+              ) >= 30
+              unless count_over_time(
+                (
+                  block_deleting_service_total_pending_block_count > 0
+                  and rate(block_deleting_service_success_count[10m]) == 0
+                )[1h:1m]
+              ) >= 60
+            ),
+            "severity", "medium", "", ""
+          )
+          or label_replace(
+            (
+              count_over_time(
+                (
+                  block_deleting_service_total_pending_block_count > 0
+                  and rate(block_deleting_service_success_count[10m]) == 0
+                )[5m:1m]
+              ) >= 5
+              unless count_over_time(
+                (
+                  block_deleting_service_total_pending_block_count > 0
+                  and rate(block_deleting_service_success_count[10m]) == 0
+                )[30m:1m]
+              ) >= 30
+            ),
+            "severity", "low", "", ""
+          )
+        labels:
+          component: datanode
+        annotations:
+          summary: "Datanode block deletion not progressing ({{ $labels.severity }})"
+          description: >-
+            BlockDeletingService on {{ $labels.instance }} has pending blocks
+            with zero success rate. Severity tier {{ $labels.severity }} from
+            duration the condition has held.

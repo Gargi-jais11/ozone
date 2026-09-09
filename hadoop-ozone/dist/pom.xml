@@ -233,6 +233,12 @@
                 <resource>
                   <directory>src/main/compose</directory>
                   <filtering>true</filtering>
+                  <excludes>
+                    <exclude>**/__pycache__/**</exclude>
+                    <exclude>**/*.pyc</exclude>
+                    <exclude>**/.pytest_cache/**</exclude>
+                    <exclude>**/.venv/**</exclude>
+                  </excludes>
                 </resource>
               </resources>
             </configuration>

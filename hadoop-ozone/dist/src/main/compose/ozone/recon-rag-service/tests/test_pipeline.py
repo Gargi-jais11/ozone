@@ -26,7 +26,9 @@ from app.rag.llm_client import LLMClient
 from app.rag.pipeline import RagPipeline
 from app.rag.vector_store import KnowledgeDocument, VectorStore
 
-ALERT = AlertPayload(labels={"alertname": "OzoneDeletionNotProgressing"})
+ALERT = AlertPayload(
+    labels={"alertname": "OzoneOmDeletionNotProgressing", "component": "om", "instance": "om:9874"}
+)
 
 
 class FakeVectorStore(VectorStore):

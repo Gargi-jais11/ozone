@@ -100,7 +100,8 @@ export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml:rag-service.yaml
 |---|---|
 | `monitoring.yaml` | Prometheus + Alertmanager services |
 | `prometheus.yml` | Scrapes OM/SCM/DN; loads `ozone-aiops-alerts.yml`; sends alerts to Alertmanager |
-| `ozone-aiops-alerts.yml` | Rule `OzoneDeletionNotProgressing` (first shipped alert) |
+| `ozone-aiops-alerts.yml` | Three alert rules (OM/SCM/datanode); each rule derives severity (low/medium/high/critical) from how long the condition has held |
+| `alertmanager.yml` | Webhook to Recon; inhibition so only the highest severity tier notifies |
 | `alertmanager.yml` | Webhook receiver -> `http://recon:9888/api/v1/aiops/webhook` |
 | `rag-service.yaml` | Builds `recon-rag` container; sets `ozone.recon.aiops.*` on Recon |
 
@@ -158,13 +159,14 @@ curl -s http://localhost:8642/api/v1/plugins
 
 ### Known limitations
 
-- **`config_client.py` expects JSON from `GET om:9874/conf?format=json`, but OM
-  returns XML** in this cluster. Diagnose/remediate still run but may warn
-  `"Could not read the current value from the cluster"` and assume
-  `ozone-default.xml` defaults. Fix: parse XML in `config_client.py` or rely on
-  JMX-only evidence.
+- **`config_client.py` tries JSON first and falls back to XML** when services
+  return the default `/conf` format. Missing properties still produce warnings
+  and default-based remediation plans.
 - **Live remediation (`dryRun=false`)** is not implemented (HTTP 501).
-- **Only one alert plugin** ships today: `OzoneDeletionNotProgressing`.
+- **One deletion plugin** ships today, registered for three Prometheus
+  alertnames: `OzoneOmDeletionNotProgressing`, `OzoneScmDeletionNotProgressing`,
+  and `OzoneDatanodeDeletionNotProgressing` (legacy `OzoneDeletionNotProgressing`
+  still maps to OM).
 
 ## Pluggable architecture
 
@@ -186,11 +188,12 @@ pattern already used in Ozone (e.g. `OmTransportFactory.createFactory`).
 Adding a second alert type means adding a new module, not editing a
 dispatcher.
 
-`app/plugins/deletion_not_progressing.py` is the one shipped plugin, for the
-`OzoneDeletionNotProgressing` alert: it reads the OM's
-`DeletingServiceMetrics` JMX bean and the relevant `ozone.*.deleting.*`
-config properties, and proposes doubling
-`ozone.key.deleting.limit.per.task` as its only permitted action.
+`app/plugins/deletion_not_progressing.py` is the one shipped plugin, registered
+for the three deletion-stuck alertnames above. It reads hop-specific JMX and
+config — OM (`DeletingServiceMetrics`), SCM
+(`SCMBlockDeletingService` + `hdds.scm.block.deletion.*`), or datanode
+(`BlockDeletingService` + `ozone.block.deleting.*`) — and proposes the
+matching dry-run remediation for that hop.
 
 ## RAG pipeline strategy
 

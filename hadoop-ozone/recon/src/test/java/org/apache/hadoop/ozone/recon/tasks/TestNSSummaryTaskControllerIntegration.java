@@ -46,6 +46,7 @@ import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.utils.db.DBStore;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
+import org.apache.hadoop.ozone.recon.spi.AIOpsAlertStore;
 import org.apache.hadoop.ozone.recon.spi.ReconContainerMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconFileMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconGlobalStatsManager;
@@ -116,7 +117,7 @@ public class TestNSSummaryTaskControllerIntegration {
     when(reconDbProvider.getStagedReconDBProvider()).thenReturn(reconDbProvider);
     taskController = new ReconTaskControllerImpl(ozoneConfiguration, java.util.Collections.emptySet(),
         mockTaskStatusUpdaterManager, reconDbProvider, reconContainerMgr, mockNamespaceSummaryManager,
-        reconGlobalStatsManager, reconFileMetadataManager);
+        reconGlobalStatsManager, reconFileMetadataManager, mock(AIOpsAlertStore.class));
     taskController.start(); // Initialize the executor service
     taskController.registerTask(nsSummaryTask);
     taskController.registerTask(mockOtherTask);

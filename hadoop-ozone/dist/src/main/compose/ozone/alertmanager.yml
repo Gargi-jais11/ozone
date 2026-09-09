@@ -19,10 +19,29 @@ global:
 
 route:
   receiver: recon-aiops
-  group_by: ['alertname', 'component']
+  group_by: ['alertname', 'component', 'instance']
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 1h
+
+# When multiple severity tiers fire for the same hop (same alertname +
+# component + instance), notify Recon only for the highest severity.
+inhibit_rules:
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity=~"low|medium|high"
+    equal: ['alertname', 'component', 'instance']
+  - source_matchers:
+      - severity="high"
+    target_matchers:
+      - severity=~"low|medium"
+    equal: ['alertname', 'component', 'instance']
+  - source_matchers:
+      - severity="medium"
+    target_matchers:
+      - severity="low"
+    equal: ['alertname', 'component', 'instance']
 
 receivers:
   - name: recon-aiops

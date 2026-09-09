@@ -15,17 +15,23 @@
  limitations under the License.
 -->
 
-# Runbook: Ozone key deletion not progressing
+# Runbook: Ozone deletion not progressing (OM, SCM, or datanode)
 
 ## Symptom
 
-The `OzoneDeletionNotProgressing` alert fires when the Ozone Manager's
-KeyDeletingService appears to be making little or no forward progress:
-`numKeysProcessed` and `numKeysPurged` (from the `DeletingServiceMetrics`
-JMX bean) stay flat across scrape intervals while keys/directories remain
-queued for deletion.
+The `OzoneDeletionNotProgressing` alert fires when any hop in the deletion
+pipeline shows a backlog with zero progress rate for five minutes. The
+`component` label on the alert identifies which hop is stuck:
 
-## Likely causes, in order of frequency
+| `component` | Service | Key metrics |
+|---|---|---|
+| `om` | KeyDeletingService | `numKeysProcessed` > `numKeysPurged`, purge rate zero |
+| `scm` | SCMBlockDeletingService | `NumBlockDeletionTransactions` > 0, completed rate zero |
+| `datanode` | BlockDeletingService | `TotalPendingBlockCount` > 0, success rate zero |
+
+## OM hop (`component=om`)
+
+### Likely causes, in order of frequency
 
 1. **Backlog exceeds the per-task scan limit.** `ozone.key.deleting.limit.per.task`
    (default 50000) bounds how many keys KeyDeletingService inspects per run.
@@ -45,13 +51,43 @@ queued for deletion.
    is missing entirely from OM's `/jmx` output, the background service thread
    may not have started.
 
-## Recommended first action
+### Recommended first action (OM)
 
 For cause (1), doubling `ozone.key.deleting.limit.per.task` lets the service
-scan a larger backlog per run without any other configuration change. This is
-the only remediation this plugin proposes automatically; it requires an OM
-restart or reconfig to take effect and should be treated as medium risk since
-a much larger per-task limit increases the work done in a single run.
+scan a larger backlog per run. Requires an OM restart and is medium risk.
 
-Causes (2)-(4) require operator investigation beyond what this plugin
-automates in this build (see the deferred-work section of the service README).
+Causes (2)-(4) may require operator investigation beyond automated remediation.
+
+## SCM hop (`component=scm`)
+
+### Likely causes
+
+1. **Datanodes unavailable or slow to ack deletion commands.** SCM's
+   DeletedBlockLog holds transactions until every replica datanode confirms
+   block deletion.
+2. **Per-interval send limit too low.** `hdds.scm.block.deletion.per-interval.max`
+   caps how many block replicas SCM dispatches per SCMBlockDeletingService run.
+3. **SCMBlockDeletingService not running.** Missing
+   `Hadoop:service=StorageContainerManager,name=SCMBlockDeletingService` JMX bean.
+
+### Recommended first action (SCM)
+
+Double `hdds.scm.block.deletion.per-interval.max` when datanodes are healthy
+but the DeletedBlockLog backlog is not draining. This property is reconfigurable
+on SCM without restart.
+
+## Datanode hop (`component=datanode`)
+
+### Likely causes
+
+1. **`ozone.block.deleting.service.interval` too large.** BlockDeletingService
+   runs infrequently, so pending blocks accumulate locally.
+2. **Container lock timeouts.** High `TotalLockTimeoutTransactionCount` means
+   deletion commands could not acquire container locks in time.
+3. **Disk or I/O issues on the datanode.** Success rate stays zero despite pending blocks.
+
+### Recommended first action (datanode)
+
+Halve `ozone.block.deleting.service.interval` on the affected datanode so
+BlockDeletingService runs more often. This property is reconfigurable without
+restart on datanodes.

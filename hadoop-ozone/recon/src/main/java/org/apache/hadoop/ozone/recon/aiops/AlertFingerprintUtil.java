@@ -20,7 +20,9 @@ package org.apache.hadoop.ozone.recon.aiops;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
@@ -29,6 +31,10 @@ import java.util.stream.Collectors;
  */
 public final class AlertFingerprintUtil {
 
+  /** Labels excluded from the fingerprint (severity escalates in-place). */
+  private static final Set<String> EXCLUDED_LABELS =
+      Collections.singleton("severity");
+
   private AlertFingerprintUtil() {
   }
 
@@ -36,7 +42,15 @@ public final class AlertFingerprintUtil {
     if (labels == null || labels.isEmpty()) {
       return "unknown";
     }
-    TreeMap<String, String> sorted = new TreeMap<>(labels);
+    TreeMap<String, String> sorted = new TreeMap<>();
+    for (Map.Entry<String, String> entry : labels.entrySet()) {
+      if (!EXCLUDED_LABELS.contains(entry.getKey())) {
+        sorted.put(entry.getKey(), entry.getValue());
+      }
+    }
+    if (sorted.isEmpty()) {
+      return "unknown";
+    }
     String canonical = sorted.entrySet().stream()
         .map(entry -> entry.getKey() + "=" + entry.getValue())
         .collect(Collectors.joining(","));

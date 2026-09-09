@@ -33,7 +33,7 @@ class RagPipeline:
     def diagnose(
         self, context: DiagnosticContext, plugin: AlertDiagnosticPlugin
     ) -> DiagnosisResponse:
-        permitted_actions = plugin.permitted_actions()
+        permitted_actions = plugin.permitted_actions_for(context)
         permitted_action_ids = {action.action_id for action in permitted_actions}
 
         query = plugin.retrieval_query(context)

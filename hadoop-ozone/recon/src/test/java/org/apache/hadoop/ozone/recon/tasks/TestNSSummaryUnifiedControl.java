@@ -58,6 +58,7 @@ import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.recon.ReconServerConfigKeys;
 import org.apache.hadoop.ozone.recon.ReconUtils;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
+import org.apache.hadoop.ozone.recon.spi.AIOpsAlertStore;
 import org.apache.hadoop.ozone.recon.spi.ReconContainerMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconFileMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconGlobalStatsManager;
@@ -134,7 +135,7 @@ public class TestNSSummaryUnifiedControl {
 
     taskController = new ReconTaskControllerImpl(ozoneConfiguration, new HashSet<>(),
         mockTaskStatusUpdaterManager, reconDbProvider, reconContainerMgr, mockNamespaceSummaryManager,
-        reconGlobalStatsManager, reconFileMetadataManager);
+        reconGlobalStatsManager, reconFileMetadataManager, mock(AIOpsAlertStore.class));
 
     // Register testable NSSummaryTask instance
     taskController.registerTask(createTestableNSSummaryTask());

@@ -93,7 +93,7 @@ public class AIOpsEndpoint {
       return Response.ok().build();
     } catch (IOException e) {
       LOG.error("Failed to process Alertmanager webhook", e);
-      return Response.status(Response.Status.BAD_REQUEST)
+      return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
           .entity(errorBody(e.getMessage()))
           .build();
     }

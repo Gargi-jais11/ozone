@@ -38,7 +38,10 @@ paths:
                     type: array
                     items:
                       type: string
-                    example: [OzoneDeletionNotProgressing]
+                    example:
+                      - OzoneOmDeletionNotProgressing
+                      - OzoneScmDeletionNotProgressing
+                      - OzoneDatanodeDeletionNotProgressing
   /api/v1/diagnose:
     post:
       summary: Diagnose a Prometheus alert
@@ -103,7 +106,7 @@ components:
           type: object
           additionalProperties:
             type: string
-          example: { alertname: OzoneDeletionNotProgressing, severity: warning }
+          example: { alertname: OzoneOmDeletionNotProgressing, severity: low, component: om, instance: om:9874 }
         annotations:
           type: object
           additionalProperties:

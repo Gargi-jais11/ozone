@@ -55,6 +55,7 @@ import org.apache.hadoop.ozone.recon.ReconConstants;
 import org.apache.hadoop.ozone.recon.metrics.ReconTaskControllerMetrics;
 import org.apache.hadoop.ozone.recon.metrics.ReconTaskMetrics;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
+import org.apache.hadoop.ozone.recon.spi.AIOpsAlertStore;
 import org.apache.hadoop.ozone.recon.spi.ReconContainerMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconFileMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconGlobalStatsManager;
@@ -82,6 +83,7 @@ public class ReconTaskControllerImpl implements ReconTaskController {
   private final ReconNamespaceSummaryManager reconNamespaceSummaryManager;
   private final ReconGlobalStatsManager reconGlobalStatsManager;
   private final ReconFileMetadataManager reconFileMetadataManager;
+  private final AIOpsAlertStore aiOpsAlertStore;
 
   private Map<String, ReconOmTask> reconOmTasks;
   private ExecutorService executorService;
@@ -119,13 +121,15 @@ public class ReconTaskControllerImpl implements ReconTaskController {
                                  ReconContainerMetadataManager reconContainerMetadataManager,
                                  ReconNamespaceSummaryManager reconNamespaceSummaryManager,
                                  ReconGlobalStatsManager reconGlobalStatsManager,
-                                 ReconFileMetadataManager reconFileMetadataManager) {
+                                 ReconFileMetadataManager reconFileMetadataManager,
+                                 AIOpsAlertStore aiOpsAlertStore) {
     this.configuration = configuration;
     this.reconDBProvider = reconDBProvider;
     this.reconContainerMetadataManager = reconContainerMetadataManager;
     this.reconNamespaceSummaryManager = reconNamespaceSummaryManager;
     this.reconGlobalStatsManager = reconGlobalStatsManager;
     this.reconFileMetadataManager = reconFileMetadataManager;
+    this.aiOpsAlertStore = aiOpsAlertStore;
     reconOmTasks = new HashMap<>();
     threadCount = configuration.getInt(OZONE_RECON_TASK_THREAD_COUNT_KEY,
         OZONE_RECON_TASK_THREAD_COUNT_DEFAULT);
@@ -153,10 +157,11 @@ public class ReconTaskControllerImpl implements ReconTaskController {
                           ReconNamespaceSummaryManager reconNamespaceSummaryManager,
                           ReconGlobalStatsManager reconGlobalStatsManager,
                           ReconFileMetadataManager reconFileMetadataManager,
+                          AIOpsAlertStore aiOpsAlertStore,
                           Clock clock) {
     this(configuration, tasks, taskStatusUpdaterManager, reconDBProvider,
         reconContainerMetadataManager, reconNamespaceSummaryManager,
-        reconGlobalStatsManager, reconFileMetadataManager);
+        reconGlobalStatsManager, reconFileMetadataManager, aiOpsAlertStore);
     this.clock = clock;
   }
 
@@ -309,6 +314,7 @@ public class ReconTaskControllerImpl implements ReconTaskController {
         reconContainerMetadataManager.reinitialize(reconDBProvider);
         reconGlobalStatsManager.reinitialize(reconDBProvider);
         reconFileMetadataManager.reinitialize(reconDBProvider);
+        aiOpsAlertStore.reinitialize(reconDBProvider);
         //Tasks with staged instances must reload instance state in init() after reinit.
         localReconOmTaskMap.values().forEach(ReconOmTask::init);
         recordAllTaskStatus(localReconOmTaskMap, 0, omMetadataManager.getLastSequenceNumberFromDB());
@@ -329,6 +335,7 @@ public class ReconTaskControllerImpl implements ReconTaskController {
           reconContainerMetadataManager.reinitialize(reconDBProvider);
           reconGlobalStatsManager.reinitialize(reconDBProvider);
           reconFileMetadataManager.reinitialize(reconDBProvider);
+          aiOpsAlertStore.reinitialize(reconDBProvider);
         } catch (IOException ex) {
           LOG.error("Re-initialization of task manager failed.", e);
         }

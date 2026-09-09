@@ -101,10 +101,25 @@ const COLUMNS = [
     render: (_: string, record: IAlertRecord) => record.labels.alertname ?? 'N/A'
   },
   {
+    title: 'Component',
+    dataIndex: ['labels', 'component'],
+    key: 'component',
+    render: (_: string, record: IAlertRecord) => record.labels.component ?? 'N/A'
+  },
+  {
     title: 'Severity',
     dataIndex: ['labels', 'severity'],
     key: 'severity',
-    render: (_: string, record: IAlertRecord) => record.labels.severity ?? 'N/A'
+    render: (_: string, record: IAlertRecord) => {
+      const severity = record.labels.severity ?? 'N/A';
+      const colorBySeverity: Record<string, string> = {
+        low: 'blue',
+        medium: 'gold',
+        high: 'orange',
+        critical: 'red'
+      };
+      return <Tag color={colorBySeverity[severity] ?? 'default'}>{severity}</Tag>;
+    }
   },
   {
     title: 'State',

@@ -24,7 +24,11 @@ from app.plugins.deletion_not_progressing import INCREASE_KEY_DELETING_LIMIT
 client = TestClient(app)
 
 ALERT_PAYLOAD = {
-    "labels": {"alertname": "OzoneDeletionNotProgressing"},
+    "labels": {
+        "alertname": "OzoneOmDeletionNotProgressing",
+        "component": "om",
+        "instance": "om:9874",
+    },
     "annotations": {},
     "state": "firing",
     "activeAt": "2026-09-01T00:00:00Z",
@@ -66,7 +70,10 @@ def test_health():
 def test_plugins_lists_deletion_not_progressing():
     response = client.get("/api/v1/plugins")
     assert response.status_code == 200
-    assert "OzoneDeletionNotProgressing" in response.json()["plugins"]
+    plugins = response.json()["plugins"]
+    assert "OzoneOmDeletionNotProgressing" in plugins
+    assert "OzoneScmDeletionNotProgressing" in plugins
+    assert "OzoneDatanodeDeletionNotProgressing" in plugins
 
 
 @respx.mock
@@ -81,7 +88,7 @@ def test_diagnose_returns_a_diagnosis():
     response = client.post("/api/v1/diagnose", json=ALERT_PAYLOAD)
     assert response.status_code == 200
     body = response.json()
-    assert body["alert_type"] == "OzoneDeletionNotProgressing"
+    assert body["alert_type"] == "OzoneOmDeletionNotProgressing"
     assert body["diagnosis"]
 
 

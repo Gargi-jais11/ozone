@@ -15,28 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.ozone.recon.spi;
-
-import java.io.IOException;
-import java.util.List;
-import org.apache.hadoop.ozone.recon.aiops.model.StoredAlert;
-import org.apache.hadoop.ozone.recon.spi.impl.ReconDBProvider;
-
 /**
- * RocksDB-backed store for Alertmanager-delivered alert state.
+ * Models for alerts persisted by Recon AIOps.
  */
-public interface AIOpsAlertStore {
-
-  void upsert(StoredAlert alert) throws IOException;
-
-  StoredAlert get(String alertId) throws IOException;
-
-  List<StoredAlert> listAlerts() throws IOException;
-
-  /**
-   * Rebind table handles after {@link ReconDBProvider#replaceStagedDb}.
-   *
-   * @param reconDBProvider recon DB provider to reinitialize with
-   */
-  void reinitialize(ReconDBProvider reconDBProvider);
-}
+package org.apache.hadoop.ozone.recon.aiops.model;

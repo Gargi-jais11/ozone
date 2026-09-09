@@ -43,6 +43,7 @@ import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
 import org.apache.hadoop.ozone.recon.ReconTestInjector;
 import org.apache.hadoop.ozone.recon.persistence.AbstractReconSqlDBTest;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
+import org.apache.hadoop.ozone.recon.spi.AIOpsAlertStore;
 import org.apache.hadoop.ozone.recon.spi.ReconContainerMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconFileMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconGlobalStatsManager;
@@ -126,7 +127,7 @@ public class TestOmTableInsightTaskStaleCounterAfterReinit extends AbstractRecon
         mock(ReconContainerMetadataManager.class),
         mock(ReconNamespaceSummaryManager.class),
         mock(ReconGlobalStatsManager.class),
-        mock(ReconFileMetadataManager.class));
+        mock(ReconFileMetadataManager.class), mock(AIOpsAlertStore.class));
     reconTaskController.start();
   }
 

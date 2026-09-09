@@ -59,27 +59,75 @@ class MockLLMClient(LLMClient):
 
     def generate(self, prompt: str) -> str:
         context = _extract_context_block(prompt)
+        alert_labels = context.get("alert_labels", {})
+        component = alert_labels.get("component", "om").lower()
         jmx_metrics = context.get("jmx_metrics", {})
         config_properties = context.get("config_properties", {})
         notes = context.get("notes", [])
-        permitted_action_ids = context.get("permitted_action_ids", [])
         retrieved_sources = context.get("retrieved_sources", [])
 
         evidence = list(notes)
         if jmx_metrics:
-            evidence.append(f"KeyDeletingService JMX snapshot: {jmx_metrics}")
+            evidence.append(f"Deletion-service JMX snapshot ({component}): {jmx_metrics}")
         if config_properties:
-            evidence.append(f"Relevant OM configuration: {config_properties}")
+            evidence.append(f"Relevant configuration ({component}): {config_properties}")
         if retrieved_sources:
             evidence.append(f"Matched runbook(s): {', '.join(retrieved_sources)}")
 
         recommended_fix = None
         if not jmx_metrics and not config_properties:
             diagnosis = (
-                "Could not collect any deletion-service telemetry from the Ozone "
-                "Manager JMX/config endpoints, so the root cause cannot be "
-                "confirmed. Restore connectivity to OM and retry diagnosis."
+                f"Could not collect deletion-service telemetry from the {component} "
+                "JMX/config endpoints, so the root cause cannot be confirmed. "
+                "Restore connectivity and retry diagnosis."
             )
+        elif component == "scm":
+            pending = jmx_metrics.get("NumBlockDeletionTransactions")
+            completed = jmx_metrics.get("NumBlockDeletionTransactionCompleted")
+            diagnosis = (
+                "SCM block deletion metrics show a backlog with little or no "
+                f"forward progress (NumBlockDeletionTransactions={pending}, "
+                f"NumBlockDeletionTransactionCompleted={completed}). This commonly "
+                "happens when datanodes are unavailable or slow to acknowledge "
+                "deletion commands, or when "
+                "hdds.scm.block.deletion.per-interval.max is too low for the "
+                "current DeletedBlockLog backlog."
+            )
+            prop = "hdds.scm.block.deletion.per-interval.max"
+            current_limit = config_properties.get(prop)
+            proposed_limit = int(current_limit) * 2 if current_limit else 1000000
+            recommended_fix = {
+                "action_id": "increase_scm_block_deletion_per_interval_max",
+                "summary": "Increase SCM block deletion throughput per interval.",
+                "config_changes": {prop: str(proposed_limit)},
+                "rationale": (
+                    "Doubling the per-interval block limit lets SCM drain the "
+                    "DeletedBlockLog faster when datanodes are healthy."
+                ),
+            }
+        elif component == "datanode":
+            pending = jmx_metrics.get("TotalPendingBlockCount")
+            success = jmx_metrics.get("SuccessCount")
+            instance = alert_labels.get("instance", "datanode")
+            diagnosis = (
+                f"Datanode {instance} block deletion metrics show pending blocks "
+                f"with little or no forward progress (TotalPendingBlockCount="
+                f"{pending}, SuccessCount={success}). This commonly happens when "
+                "ozone.block.deleting.service.interval is too large, container "
+                "locks time out, or the datanode disk is unhealthy."
+            )
+            prop = "ozone.block.deleting.service.interval"
+            current_interval = config_properties.get(prop, "60s")
+            proposed_interval = self._halve_duration(current_interval)
+            recommended_fix = {
+                "action_id": "decrease_datanode_block_deleting_interval",
+                "summary": "Run BlockDeletingService more frequently on the datanode.",
+                "config_changes": {prop: proposed_interval},
+                "rationale": (
+                    "Halving the service interval lets the datanode process its "
+                    "local deletion backlog more often."
+                ),
+            }
         else:
             processed = jmx_metrics.get("numKeysProcessed")
             purged = jmx_metrics.get("numKeysPurged")
@@ -91,22 +139,20 @@ class MockLLMClient(LLMClient):
                 "backlog, or a downstream dependency (snapshot deep cleaning, "
                 "block deletion pipeline) is itself stalled."
             )
-            if permitted_action_ids:
-                action_id = permitted_action_ids[0]
-                current_limit = config_properties.get("ozone.key.deleting.limit.per.task")
-                proposed_limit = int(current_limit) * 2 if current_limit else 100000
-                recommended_fix = {
-                    "action_id": action_id,
-                    "summary": "Increase the per-task key deletion scan limit.",
-                    "config_changes": {
-                        "ozone.key.deleting.limit.per.task": str(proposed_limit),
-                    },
-                    "rationale": (
-                        "Doubling the scan limit lets KeyDeletingService clear a "
-                        "larger backlog per run without any other configuration "
-                        "changes."
-                    ),
-                }
+            current_limit = config_properties.get("ozone.key.deleting.limit.per.task")
+            proposed_limit = int(current_limit) * 2 if current_limit else 100000
+            recommended_fix = {
+                "action_id": "increase_key_deleting_limit_per_task",
+                "summary": "Increase the per-task key deletion scan limit.",
+                "config_changes": {
+                    "ozone.key.deleting.limit.per.task": str(proposed_limit),
+                },
+                "rationale": (
+                    "Doubling the scan limit lets KeyDeletingService clear a "
+                    "larger backlog per run without any other configuration "
+                    "changes."
+                ),
+            }
 
         return json.dumps(
             {
@@ -115,6 +161,14 @@ class MockLLMClient(LLMClient):
                 "recommended_fix": recommended_fix,
             }
         )
+
+    @staticmethod
+    def _halve_duration(value: str) -> str:
+        match = re.fullmatch(r"(\d+)([smhd])", value.strip())
+        if not match:
+            return value
+        amount = max(1, int(match.group(1)) // 2)
+        return f"{amount}{match.group(2)}"
 
 
 class OpenAICompatibleLLMClient(LLMClient):

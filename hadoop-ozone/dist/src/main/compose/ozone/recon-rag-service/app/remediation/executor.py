@@ -42,7 +42,9 @@ def validate_and_plan(
     context: DiagnosticContext,
     dry_run: bool,
 ) -> RemediationPlan:
-    permitted_ids = {action.action_id for action in plugin.permitted_actions()}
+    permitted_ids = {
+        action.action_id for action in plugin.permitted_actions_for(context)
+    }
     if action_id not in permitted_ids:
         raise ActionNotPermittedError(
             f"action_id={action_id!r} is not a permitted action for "
@@ -55,6 +57,9 @@ def validate_and_plan(
             "Only dry-run validation/planning is supported."
         )
 
-    plan = plugin.build_remediation_plan(action_id, context)
+    try:
+        plan = plugin.build_remediation_plan(action_id, context)
+    except ValueError as exc:
+        raise ActionNotPermittedError(str(exc)) from exc
     plan.dry_run = dry_run
     return plan

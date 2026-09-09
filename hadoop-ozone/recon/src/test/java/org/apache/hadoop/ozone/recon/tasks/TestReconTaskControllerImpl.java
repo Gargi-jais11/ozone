@@ -52,6 +52,7 @@ import org.apache.hadoop.hdds.utils.db.DBStore;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.recon.persistence.AbstractReconSqlDBTest;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
+import org.apache.hadoop.ozone.recon.spi.AIOpsAlertStore;
 import org.apache.hadoop.ozone.recon.spi.ReconContainerMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconFileMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconGlobalStatsManager;
@@ -102,7 +103,7 @@ public class TestReconTaskControllerImpl extends AbstractReconSqlDBTest {
     testClock = MockClock.newInstance();
     reconTaskController = new ReconTaskControllerImpl(ozoneConfiguration, new HashSet<>(),
         reconTaskStatusUpdaterManagerMock, reconDbProvider, reconContainerMgr, nsSummaryManager,
-        reconGlobalStatsManager, reconFileMetadataManager, testClock);
+        reconGlobalStatsManager, reconFileMetadataManager, mock(AIOpsAlertStore.class), testClock);
     reconTaskController.start();
   }
 
@@ -442,7 +443,7 @@ public class TestReconTaskControllerImpl extends AbstractReconSqlDBTest {
     ReconFileMetadataManager reconFileMetadataManager = mock(ReconFileMetadataManager.class);
     ReconTaskControllerImpl testController = new ReconTaskControllerImpl(ozoneConfiguration, new HashSet<>(),
         reconTaskStatusUpdaterManagerMock, reconDbProvider, reconContainerMgr, nsSummaryManager,
-        reconGlobalStatsManager, reconFileMetadataManager);
+        reconGlobalStatsManager, reconFileMetadataManager, mock(AIOpsAlertStore.class));
     // Don't start async processing
     
     // Add some events to buffer first
@@ -534,7 +535,7 @@ public class TestReconTaskControllerImpl extends AbstractReconSqlDBTest {
     ReconTaskControllerImpl controller = new ReconTaskControllerImpl(ozoneConfiguration, new HashSet<>(),
         reconTaskStatusUpdaterManagerMock, reconDbProvider, mock(ReconContainerMetadataManager.class),
         mock(ReconNamespaceSummaryManager.class), mock(ReconGlobalStatsManager.class),
-        mock(ReconFileMetadataManager.class));
+        mock(ReconFileMetadataManager.class), mock(AIOpsAlertStore.class));
     // Do not start async processing.
 
     // Checkpointed manager whose cleanup (stop()) we verify.
