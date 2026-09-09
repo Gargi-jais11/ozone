@@ -20,7 +20,9 @@ new alert types are added by dropping in a new module and decorating its
 plugin class with @register_plugin, not by editing a central switch statement.
 """
 
-from app.plugins import deletion_not_progressing  # noqa: F401  (registers itself)
+from app.plugins import datanode_deletion_not_progressing  # noqa: F401  (registers itself)
+from app.plugins import om_deletion_not_progressing  # noqa: F401  (registers itself)
+from app.plugins import scm_deletion_not_progressing  # noqa: F401  (registers itself)
 from app.plugins.registry import get_plugin, list_plugins, register_plugin
 
 __all__ = ["get_plugin", "list_plugins", "register_plugin"]

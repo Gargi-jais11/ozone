@@ -23,9 +23,13 @@ documented seam for the (currently unimplemented) future live-execution
 path.
 """
 
+import logging
+
 from app.config import settings
 from app.models import DiagnosticContext, RemediationPlan
 from app.plugins.base import AlertDiagnosticPlugin
+
+logger = logging.getLogger(__name__)
 
 
 class ActionNotPermittedError(ValueError):
@@ -45,13 +49,25 @@ def validate_and_plan(
     permitted_ids = {
         action.action_id for action in plugin.permitted_actions_for(context)
     }
+    logger.info(
+        "validate_and_plan alert_type=%s: action_id=%s dry_run=%s permitted_ids=%s",
+        plugin.alert_type, action_id, dry_run, sorted(permitted_ids),
+    )
     if action_id not in permitted_ids:
+        logger.warning(
+            "validate_and_plan alert_type=%s: action_id=%s not permitted (permitted_ids=%s)",
+            plugin.alert_type, action_id, sorted(permitted_ids),
+        )
         raise ActionNotPermittedError(
             f"action_id={action_id!r} is not a permitted action for "
             f"alert_type={plugin.alert_type!r}. Permitted actions: {sorted(permitted_ids)}"
         )
 
     if not dry_run and not settings.allow_live_remediation:
+        logger.warning(
+            "validate_and_plan alert_type=%s: rejected dry_run=false (allow_live_remediation=%s)",
+            plugin.alert_type, settings.allow_live_remediation,
+        )
         raise LiveRemediationNotSupportedError(
             "Live remediation (dryRun=false) is not implemented in this build. "
             "Only dry-run validation/planning is supported."
@@ -60,6 +76,14 @@ def validate_and_plan(
     try:
         plan = plugin.build_remediation_plan(action_id, context)
     except ValueError as exc:
+        logger.warning(
+            "validate_and_plan alert_type=%s: build_remediation_plan rejected action_id=%s: %s",
+            plugin.alert_type, action_id, exc,
+        )
         raise ActionNotPermittedError(str(exc)) from exc
     plan.dry_run = dry_run
+    logger.info(
+        "validate_and_plan alert_type=%s: plan config_changes=%s dry_run=%s",
+        plugin.alert_type, plan.config_changes, plan.dry_run,
+    )
     return plan

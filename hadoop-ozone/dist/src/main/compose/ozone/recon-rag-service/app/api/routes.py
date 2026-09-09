@@ -15,6 +15,8 @@
 # limitations under the License.
 """HTTP surface of the recon-rag-service: diagnose, remediate, plugins, health."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.config import settings
@@ -26,6 +28,8 @@ from app.remediation.executor import (
     LiveRemediationNotSupportedError,
     validate_and_plan,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -43,13 +47,25 @@ def plugins() -> dict:
 @router.post("/diagnose", response_model=DiagnosisResponse)
 def diagnose(alert: AlertPayload) -> DiagnosisResponse:
     alert_type = alert.alert_type
+    logger.info("POST /diagnose alert_type=%s labels=%s", alert_type, alert.labels)
     try:
         plugin = get_plugin(alert_type)
     except KeyError as exc:
+        logger.warning("No plugin registered for alert_type=%s", alert_type)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     context = plugin.collect_context(alert, settings.cluster)
-    return get_pipeline().diagnose(context, plugin)
+    logger.info(
+        "collect_context for alert_type=%s -> jmx_metrics=%s config_properties=%s notes=%s",
+        alert_type, context.jmx_metrics, context.config_properties, context.notes,
+    )
+    response = get_pipeline().diagnose(context, plugin)
+    logger.info(
+        "diagnose response for alert_type=%s: diagnosis=%r recommended_fix=%s",
+        alert_type, response.diagnosis,
+        response.recommended_fix.action_id if response.recommended_fix else None,
+    )
+    return response
 
 
 @router.post("/remediate", response_model=RemediationPlan)
@@ -57,16 +73,30 @@ def remediate(
     request: RemediationRequest,
     dryRun: bool = Query(True, description="Must be true; live execution is not implemented."),
 ) -> RemediationPlan:
+    alert_type = request.alert.alert_type
+    logger.info(
+        "POST /remediate alert_type=%s action_id=%s dryRun=%s",
+        alert_type, request.action_id, dryRun,
+    )
     try:
-        plugin = get_plugin(request.alert.alert_type)
+        plugin = get_plugin(alert_type)
     except KeyError as exc:
+        logger.warning("No plugin registered for alert_type=%s", alert_type)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     context = plugin.collect_context(request.alert, settings.cluster)
+    logger.info(
+        "collect_context for alert_type=%s -> jmx_metrics=%s config_properties=%s notes=%s",
+        alert_type, context.jmx_metrics, context.config_properties, context.notes,
+    )
 
     try:
-        return validate_and_plan(plugin, request.action_id, context, dry_run=dryRun)
+        plan = validate_and_plan(plugin, request.action_id, context, dry_run=dryRun)
     except ActionNotPermittedError as exc:
+        logger.warning("remediate rejected for alert_type=%s: %s", alert_type, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LiveRemediationNotSupportedError as exc:
+        logger.warning("remediate rejected for alert_type=%s: %s", alert_type, exc)
         raise HTTPException(status_code=501, detail=str(exc)) from exc
+    logger.info("remediate plan for alert_type=%s: %s", alert_type, plan.config_changes)
+    return plan

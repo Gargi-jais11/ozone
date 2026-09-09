@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from app.main import app
-from app.plugins.deletion_not_progressing import INCREASE_KEY_DELETING_LIMIT
+from app.plugins.om_deletion_not_progressing import INCREASE_KEY_DELETING_LIMIT
 
 client = TestClient(app)
 
@@ -35,7 +35,10 @@ ALERT_PAYLOAD = {
 }
 
 
-def _mock_om_endpoints():
+RECON_SUMMARY_URL = "http://recon:9888/api/v1/keys/deletePending/summary"
+
+
+def _mock_om_endpoints(pending_delete_keys: int = 60000):
     respx.get("http://om:9874/jmx").mock(
         return_value=Response(
             200,
@@ -58,6 +61,9 @@ def _mock_om_endpoints():
             200,
             json={"properties": [{"key": "ozone.key.deleting.limit.per.task", "value": "50000"}]},
         )
+    )
+    respx.get(RECON_SUMMARY_URL).mock(
+        return_value=Response(200, json={"totalDeletedKeys": pending_delete_keys})
     )
 
 
@@ -101,7 +107,7 @@ def test_diagnose_flags_unconfirmed_alert_when_no_backlog():
     respx.get("http://om:9874/jmx").mock(
         return_value=Response(
             200,
-            json={"beans": [{"NumKeysProcessed": 10, "NumKeysPurged": 10}]},
+            json={"beans": [{"numKeysProcessed": 10, "numKeysPurged": 10}]},
         )
     )
     respx.get("http://om:9874/conf").mock(
@@ -110,6 +116,7 @@ def test_diagnose_flags_unconfirmed_alert_when_no_backlog():
             json={"properties": [{"key": "ozone.key.deleting.limit.per.task", "value": "50000"}]},
         )
     )
+    respx.get(RECON_SUMMARY_URL).mock(return_value=Response(200, json={"totalDeletedKeys": 0}))
     response = client.post("/api/v1/diagnose", json=ALERT_PAYLOAD)
     assert response.status_code == 200
     body = response.json()
@@ -152,3 +159,23 @@ def test_remediate_live_execution_returns_501():
         json={"alert": ALERT_PAYLOAD, "action_id": INCREASE_KEY_DELETING_LIMIT},
     )
     assert response.status_code == 501
+
+
+@respx.mock
+def test_diagnose_drops_fix_for_dummy_alert_with_no_real_backlog():
+    _mock_om_endpoints(pending_delete_keys=8)
+    response = client.post("/api/v1/diagnose", json=ALERT_PAYLOAD)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recommended_fix"] is None
+
+
+@respx.mock
+def test_remediate_rejects_when_no_real_backlog():
+    _mock_om_endpoints(pending_delete_keys=8)
+    response = client.post(
+        "/api/v1/remediate",
+        params={"dryRun": "true"},
+        json={"alert": ALERT_PAYLOAD, "action_id": INCREASE_KEY_DELETING_LIMIT},
+    )
+    assert response.status_code == 400

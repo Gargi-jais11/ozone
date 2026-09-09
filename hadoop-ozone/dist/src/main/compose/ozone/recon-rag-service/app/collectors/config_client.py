@@ -23,12 +23,15 @@ property names rather than ever dumping the full effective configuration.
 """
 
 import json
+import logging
 import xml.etree.ElementTree as ET
 from typing import Dict, Iterable, Optional
 
 import httpx
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigFetchError(RuntimeError):
@@ -80,6 +83,7 @@ def fetch_properties(http_address: str, property_names: Iterable[str]) -> Dict[s
     last_error: Optional[Exception] = None
 
     for params in ({"format": "json"}, None):
+        logger.info("GET %s params=%s wanted=%s", url, params, sorted(wanted))
         try:
             response = httpx.get(
                 url, params=params, timeout=settings.http_client_timeout_seconds
@@ -88,10 +92,15 @@ def fetch_properties(http_address: str, property_names: Iterable[str]) -> Dict[s
             all_properties = _load_properties(
                 response.text.strip(), expect_json=params is not None
             )
-            return {key: value for key, value in all_properties.items() if key in wanted}
+            found = {key: value for key, value in all_properties.items() if key in wanted}
+            missing = sorted(wanted - found.keys())
+            logger.info("GET %s -> found=%s missing=%s", url, found, missing)
+            return found
         except httpx.HTTPError as exc:
             last_error = exc
+            logger.warning("GET %s params=%s failed: %s", url, params, exc)
         except ET.ParseError as exc:
             last_error = exc
+            logger.warning("GET %s params=%s: could not parse response: %s", url, params, exc)
 
     raise ConfigFetchError(f"Failed to fetch config from {url}: {last_error}") from last_error

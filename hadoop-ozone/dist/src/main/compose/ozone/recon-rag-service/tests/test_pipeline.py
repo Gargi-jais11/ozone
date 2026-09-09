@@ -18,9 +18,9 @@ import json
 from typing import Iterable, List
 
 from app.models import AlertPayload, DiagnosticContext, RetrievedDocument
-from app.plugins.deletion_not_progressing import (
+from app.plugins.om_deletion_not_progressing import (
     INCREASE_KEY_DELETING_LIMIT,
-    DeletionNotProgressingPlugin,
+    OmDeletionNotProgressingPlugin,
 )
 from app.rag.llm_client import LLMClient
 from app.rag.pipeline import RagPipeline
@@ -58,6 +58,15 @@ def _context(**config_properties: str) -> DiagnosticContext:
     )
 
 
+def _context_with_backlog(**config_properties: str) -> DiagnosticContext:
+    return DiagnosticContext(
+        alert=ALERT,
+        jmx_metrics={"numKeysProcessed": 10, "numKeysPurged": 1, "reconPendingDeleteKeys": 60000},
+        config_properties=config_properties,
+        notes=[],
+    )
+
+
 def test_diagnose_parses_valid_json_and_keeps_permitted_fix():
     reply = json.dumps(
         {
@@ -76,8 +85,8 @@ def test_diagnose_parses_valid_json_and_keeps_permitted_fix():
     pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
 
     response = pipeline.diagnose(
-        _context(**{"ozone.key.deleting.limit.per.task": "50000"}),
-        DeletionNotProgressingPlugin(),
+        _context_with_backlog(**{"ozone.key.deleting.limit.per.task": "50000"}),
+        OmDeletionNotProgressingPlugin(),
     )
 
     assert response.what_happened == "Key deletion backlog is growing."
@@ -85,6 +94,30 @@ def test_diagnose_parses_valid_json_and_keeps_permitted_fix():
     assert response.how_to_fix == "Double ozone.key.deleting.limit.per.task."
     assert response.recommended_fix.action_id == INCREASE_KEY_DELETING_LIMIT
     assert response.retrieved_documents[0].source == "fake.md"
+
+
+def test_diagnose_drops_fix_when_no_backlog_evidence():
+    reply = json.dumps(
+        {
+            "diagnosis": "backlog too large",
+            "evidence": ["numKeysProcessed=10"],
+            "recommended_fix": {
+                "action_id": INCREASE_KEY_DELETING_LIMIT,
+                "summary": "double the limit",
+                "config_changes": {"ozone.key.deleting.limit.per.task": "100000"},
+                "rationale": "because",
+            },
+        }
+    )
+    pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
+
+    response = pipeline.diagnose(
+        _context(**{"ozone.key.deleting.limit.per.task": "50000"}),
+        OmDeletionNotProgressingPlugin(),
+    )
+
+    assert response.recommended_fix is None
+    assert any("unpermitted" in note for note in response.evidence)
 
 
 def test_diagnose_drops_unpermitted_action_id():
@@ -104,7 +137,7 @@ def test_diagnose_drops_unpermitted_action_id():
     )
     pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
 
-    response = pipeline.diagnose(_context(), DeletionNotProgressingPlugin())
+    response = pipeline.diagnose(_context(), OmDeletionNotProgressingPlugin())
 
     assert response.recommended_fix is None
     assert any("unpermitted" in note for note in response.evidence)
@@ -125,7 +158,10 @@ def test_diagnose_falls_back_to_legacy_diagnosis_field():
     )
     pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
 
-    response = pipeline.diagnose(_context(), DeletionNotProgressingPlugin())
+    response = pipeline.diagnose(
+        _context_with_backlog(**{"ozone.key.deleting.limit.per.task": "50000"}),
+        OmDeletionNotProgressingPlugin(),
+    )
 
     assert response.what_happened == "legacy combined summary"
     assert response.how_to_fix.startswith("double the limit")
@@ -148,7 +184,10 @@ def test_diagnose_parses_json_wrapped_in_markdown_fences():
 ```"""
     pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
 
-    response = pipeline.diagnose(_context(), DeletionNotProgressingPlugin())
+    response = pipeline.diagnose(
+        _context_with_backlog(**{"ozone.key.deleting.limit.per.task": "50000"}),
+        OmDeletionNotProgressingPlugin(),
+    )
 
     assert response.what_happened == "OM deletion stalled"
     assert response.recommended_fix.action_id == INCREASE_KEY_DELETING_LIMIT
@@ -157,7 +196,7 @@ def test_diagnose_parses_json_wrapped_in_markdown_fences():
 def test_diagnose_handles_malformed_json_reply():
     pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient("not json at all"))
 
-    response = pipeline.diagnose(_context(), DeletionNotProgressingPlugin())
+    response = pipeline.diagnose(_context(), OmDeletionNotProgressingPlugin())
 
     assert "could not be parsed" in response.what_happened.lower()
     assert response.recommended_fix is None
@@ -182,12 +221,43 @@ def test_diagnose_suppresses_fix_when_alert_not_confirmed():
 
     no_backlog_context = DiagnosticContext(
         alert=ALERT,
-        jmx_metrics={"NumKeysProcessed": 10, "NumKeysPurged": 10},
+        jmx_metrics={"numKeysProcessed": 10, "numKeysPurged": 10},
         config_properties={},
         notes=[],
     )
-    response = pipeline.diagnose(no_backlog_context, DeletionNotProgressingPlugin())
+    response = pipeline.diagnose(no_backlog_context, OmDeletionNotProgressingPlugin())
 
     assert response.alert_confirmed is False
     assert response.recommended_fix is None
     assert any("suppressed" in note for note in response.evidence)
+
+
+def test_diagnose_rejects_valid_json_with_evidence_not_a_list():
+    reply = json.dumps({"diagnosis": "backlog too large", "evidence": "not a list"})
+    pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
+
+    response = pipeline.diagnose(_context(), OmDeletionNotProgressingPlugin())
+
+    assert "invalid schema" in response.diagnosis.lower()
+    assert response.recommended_fix is None
+    assert response.evidence == [reply]
+
+
+def test_diagnose_rejects_valid_json_missing_diagnosis_field():
+    reply = json.dumps({"evidence": ["numKeysProcessed=10"]})
+    pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
+
+    response = pipeline.diagnose(_context(), OmDeletionNotProgressingPlugin())
+
+    assert "invalid schema" in response.diagnosis.lower()
+    assert response.recommended_fix is None
+
+
+def test_diagnose_rejects_valid_json_with_non_object_recommended_fix():
+    reply = json.dumps({"diagnosis": "x", "evidence": [], "recommended_fix": "not an object"})
+    pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
+
+    response = pipeline.diagnose(_context(), OmDeletionNotProgressingPlugin())
+
+    assert "invalid schema" in response.diagnosis.lower()
+    assert response.recommended_fix is None
