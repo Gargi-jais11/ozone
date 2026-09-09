@@ -31,7 +31,12 @@ public interface AIOpsAlertStore {
 
   StoredAlert get(String alertId) throws IOException;
 
-  List<StoredAlert> listAlerts() throws IOException;
+  void delete(String alertId) throws IOException;
+
+  /**
+   * @param includeResolved when false, omit alerts whose state is {@code resolved}
+   */
+  List<StoredAlert> listAlerts(boolean includeResolved) throws IOException;
 
   /**
    * Rebind table handles after {@link ReconDBProvider#replaceStagedDb}.

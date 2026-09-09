@@ -117,7 +117,7 @@ Base path: `/api/v1/aiops`
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/webhook` | Alertmanager ingestion (also usable for manual test payloads) |
-| `GET` | `/alerts` | List alerts stored in RocksDB |
+| `GET` | `/alerts` | List firing alerts stored in RocksDB (resolved alerts are purged on webhook; pass `?includeResolved=true` to include any legacy resolved rows) |
 | `POST` | `/alerts/{id}/diagnose` | Forward alert to this service's `/api/v1/diagnose` |
 | `POST` | `/alerts/{id}/remediate?dryRun=true&actionId=...` | Forward to `/api/v1/remediate` |
 

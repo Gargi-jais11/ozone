@@ -29,6 +29,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
+import org.apache.hadoop.ozone.recon.aiops.AIOpsAlertStates;
 import org.apache.hadoop.ozone.recon.aiops.model.StoredAlert;
 import org.apache.hadoop.ozone.recon.spi.AIOpsAlertStore;
 import org.slf4j.Logger;
@@ -88,7 +89,15 @@ public class AIOpsAlertStoreImpl implements AIOpsAlertStore {
   }
 
   @Override
-  public List<StoredAlert> listAlerts() throws IOException {
+  public void delete(String alertId) throws IOException {
+    if (alertTable == null) {
+      throw new IOException("AIOps alerts table is not initialized");
+    }
+    alertTable.delete(alertId);
+  }
+
+  @Override
+  public List<StoredAlert> listAlerts(boolean includeResolved) throws IOException {
     if (alertTable == null) {
       throw new IOException("AIOps alerts table is not initialized");
     }
@@ -97,7 +106,10 @@ public class AIOpsAlertStoreImpl implements AIOpsAlertStore {
         alertTable.iterator()) {
       while (iterator.hasNext()) {
         Table.KeyValue<String, String> entry = iterator.next();
-        alerts.add(deserialize(entry.getValue()));
+        StoredAlert alert = deserialize(entry.getValue());
+        if (includeResolved || !AIOpsAlertStates.isResolved(alert.getState())) {
+          alerts.add(alert);
+        }
       }
     }
     alerts.sort(Comparator.comparingLong(StoredAlert::getUpdatedAtMs).reversed());

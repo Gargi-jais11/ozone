@@ -37,6 +37,7 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
+import org.apache.hadoop.ozone.recon.aiops.AIOpsAlertStates;
 import org.apache.hadoop.ozone.recon.aiops.AIOpsConfigKeys;
 import org.apache.hadoop.ozone.recon.aiops.AlertFingerprintUtil;
 import org.apache.hadoop.ozone.recon.aiops.RagServiceClient;
@@ -88,7 +89,12 @@ public class AIOpsEndpoint {
       long now = System.currentTimeMillis();
       for (AlertmanagerAlert alert : webhook.getAlerts()) {
         StoredAlert storedAlert = toStoredAlert(alert, now);
-        alertStore.upsert(storedAlert);
+        if (AIOpsAlertStates.isResolved(storedAlert.getState())) {
+          alertStore.delete(storedAlert.getId());
+          LOG.debug("Purged resolved AIOps alert {}", storedAlert.getId());
+        } else {
+          alertStore.upsert(storedAlert);
+        }
       }
       return Response.ok().build();
     } catch (IOException e) {
@@ -101,7 +107,8 @@ public class AIOpsEndpoint {
 
   @GET
   @Path("/alerts")
-  public Response listAlerts() {
+  public Response listAlerts(
+      @DefaultValue("false") @QueryParam("includeResolved") boolean includeResolved) {
     if (!AIOpsConfigKeys.isAIOpsEnabled(configuration)) {
       return Response.status(Response.Status.SERVICE_UNAVAILABLE)
           .entity(errorBody("AIOps is disabled"))
@@ -109,7 +116,7 @@ public class AIOpsEndpoint {
     }
     try {
       Map<String, Object> response = new HashMap<>();
-      response.put("alerts", alertStore.listAlerts());
+      response.put("alerts", alertStore.listAlerts(includeResolved));
       return Response.ok(response).build();
     } catch (IOException e) {
       LOG.error("Failed to list AIOps alerts", e);
