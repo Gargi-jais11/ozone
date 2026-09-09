@@ -31,6 +31,12 @@ from typing import Any, Dict
 import httpx
 
 from app.config import settings
+from app.models import AlertPayload, DiagnosticContext
+from app.plugins.om_deletion_not_progressing import (
+    RECON_PENDING_DELETE_KEYS_METRIC,
+    _current_limit,
+    _proposed_limit,
+)
 from app.rag.prompt_templates import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -185,24 +191,39 @@ class MockLLMClient(LLMClient):
                 "or a downstream dependency (snapshot deep cleaning, SCM block "
                 "deletion pipeline) may itself be stalled."
             )
-            current_limit = config_properties.get("ozone.key.deleting.limit.per.task")
-            proposed_limit = int(current_limit) * 2 if current_limit else 100000
+            pending = jmx_metrics.get(RECON_PENDING_DELETE_KEYS_METRIC)
+            mock_context = DiagnosticContext(
+                alert=AlertPayload(labels=alert_labels),
+                jmx_metrics=jmx_metrics,
+                config_properties=config_properties,
+            )
+            current_limit = _current_limit(config_properties)
+            proposed_limit = _proposed_limit(mock_context)
             how_to_fix = (
-                f"Increase ozone.key.deleting.limit.per.task from "
-                f"{current_limit or 'default'} to {proposed_limit}. If the backlog "
-                "persists, inspect SCM and datanode deletion metrics for downstream "
-                "bottlenecks."
+                f"Raise ozone.key.deleting.limit.per.task from {current_limit} to "
+                f"{proposed_limit}"
+            )
+            if isinstance(pending, (int, float)):
+                how_to_fix += (
+                    f" so KeyDeletingService can scan all {pending} Recon "
+                    "delete-pending keys per run"
+                )
+            how_to_fix += (
+                ". OM key-deletion run interval is not live-reconfigurable; if "
+                "purge rate stays zero after raising the limit, inspect snapshot "
+                "deep cleaning and the SCM/datanode block-deletion pipeline."
             )
             recommended_fix = {
                 "action_id": "increase_key_deleting_limit_per_task",
-                "summary": "Increase the per-task key deletion scan limit.",
+                "summary": (
+                    f"Raise the per-task key scan limit to at least {proposed_limit}."
+                ),
                 "config_changes": {
                     "ozone.key.deleting.limit.per.task": str(proposed_limit),
                 },
                 "rationale": (
-                    "Doubling the scan limit lets KeyDeletingService clear a "
-                    "larger backlog per run without any other configuration "
-                    "changes."
+                    "The scan limit must be at least the live delete-pending key "
+                    "count for KeyDeletingService to drain the backlog in one pass."
                 ),
             }
 

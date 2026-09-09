@@ -67,6 +67,24 @@ def _current_limit(config_properties: dict) -> int:
     return int(value) if value else DEFAULT_KEY_DELETING_LIMIT_PER_TASK
 
 
+def _proposed_limit(context: DiagnosticContext) -> int:
+    """Return a scan limit high enough to cover Recon's live delete-pending count.
+
+    KeyDeletingService can inspect at most ``ozone.key.deleting.limit.per.task``
+    keys per run. When Recon reports more pending keys than the configured limit,
+    doubling the limit alone (e.g. 1 -> 2 with 500 pending) does not help --
+    the proposed value is therefore at least ``reconPendingDeleteKeys``, and at
+    least double the current limit when that is already higher.
+    """
+
+    current = _current_limit(context.config_properties)
+    doubled = current * 2
+    pending = context.jmx_metrics.get(RECON_PENDING_DELETE_KEYS_METRIC)
+    if isinstance(pending, (int, float)) and pending > current:
+        return max(int(pending), doubled)
+    return doubled
+
+
 def _backlog_exceeds_limit(context: DiagnosticContext) -> bool:
     """True only when Recon's live delete-pending key count is actually
     greater than the configured per-task scan limit -- i.e. there is direct
@@ -210,8 +228,9 @@ class OmDeletionNotProgressingPlugin(AlertDiagnosticPlugin):
             ActionSpec(
                 action_id=INCREASE_KEY_DELETING_LIMIT,
                 description=(
-                    "Double ozone.key.deleting.limit.per.task so KeyDeletingService "
-                    "scans more keys per run on the OM."
+                    "Raise ozone.key.deleting.limit.per.task to at least the current "
+                    "Recon delete-pending key count so KeyDeletingService can scan "
+                    "the full backlog per run on the OM."
                 ),
                 config_property="ozone.key.deleting.limit.per.task",
                 risk="medium",
@@ -242,18 +261,29 @@ class OmDeletionNotProgressingPlugin(AlertDiagnosticPlugin):
             )
 
         current_limit = _current_limit(context.config_properties)
-        proposed_limit = current_limit * 2
+        proposed_limit = _proposed_limit(context)
+        pending = context.jmx_metrics.get(RECON_PENDING_DELETE_KEYS_METRIC)
         warnings = list(context.notes)
         if "ozone.key.deleting.limit.per.task" not in context.config_properties:
             warnings.append(
                 "Could not read the current value from the cluster; the plan below "
                 "assumes the ozone-default.xml default and should be double-checked."
             )
+        if isinstance(pending, (int, float)) and proposed_limit < pending:
+            warnings.append(
+                f"Proposed limit ({proposed_limit}) is still below Recon's "
+                f"delete-pending count ({pending}); manual tuning may be needed."
+            )
         return RemediationPlan(
             action_id=INCREASE_KEY_DELETING_LIMIT,
             description=(
                 f"Set ozone.key.deleting.limit.per.task from {current_limit} to "
-                f"{proposed_limit} on the Ozone Manager(s)."
+                f"{proposed_limit} on the Ozone Manager(s)"
+                + (
+                    f" (Recon reports {pending} keys pending deletion)."
+                    if isinstance(pending, (int, float))
+                    else "."
+                )
             ),
             config_changes={"ozone.key.deleting.limit.per.task": str(proposed_limit)},
             requires_restart=True,

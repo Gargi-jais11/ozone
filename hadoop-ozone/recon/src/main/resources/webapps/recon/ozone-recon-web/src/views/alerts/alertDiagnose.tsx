@@ -85,6 +85,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 let cancelAlertSignal: AbortController;
 let cancelDiagnoseSignal: AbortController;
 let cancelRemediateSignal: AbortController;
+let cancelApplySignal: AbortController;
 
 export class AlertDiagnose extends React.Component<
   RouteComponentProps<IAlertDiagnoseParams, object, IAlertDiagnoseLocationState>,
@@ -105,7 +106,7 @@ export class AlertDiagnose extends React.Component<
   }
 
   componentWillUnmount(): void {
-    cancelRequests([cancelAlertSignal, cancelDiagnoseSignal, cancelRemediateSignal]);
+    cancelRequests([cancelAlertSignal, cancelDiagnoseSignal, cancelRemediateSignal, cancelApplySignal]);
   }
 
   getAlertId = (): string => this.props.match.params.alertId;
@@ -213,11 +214,10 @@ export class AlertDiagnose extends React.Component<
     });
   };
 
-  // NOTE: This is a UI-only preview of what "Apply Fix" will look like once
-  // live remediation is implemented on the backend. It never contacts the
-  // cluster or recon-rag-service -- the result below is simulated so the
-  // interaction/UX can be reviewed before the real execution path
-  // (Recon -> Ozone's ReconfigureProtocol) is built.
+  // Confirms with the operator, then calls the real
+  // .../remediate?dryRun=false endpoint, which recon-rag-service only
+  // executes against the cluster if RAG_ALLOW_LIVE_REMEDIATION=true is set
+  // on that container -- otherwise it responds 501 and nothing changes.
   confirmApplyFix = () => {
     const { diagnosis, alert } = this.state;
     if (!diagnosis) {
@@ -243,33 +243,47 @@ export class AlertDiagnose extends React.Component<
           <Alert
             type='warning'
             showIcon
-            message='Preview only'
-            description='Automatic cluster mutation is not implemented yet. Nothing on the cluster will actually change; this simulates what the applied result will look like.'
+            message='This changes the live cluster'
+            description='recon-rag-service will edit this property on the target service and reload it live (ozone admin reconfig). This cannot be undone automatically.'
           />
         </div>
       ),
-      okText: 'Apply (preview)',
-      onOk: this.simulateApplyFix
+      okText: 'Apply Fix',
+      okButtonProps: { danger: true },
+      onOk: this.applyFix
     });
   };
 
-  simulateApplyFix = () => {
-    const { diagnosis, alert, remediation } = this.state;
+  applyFix = () => {
+    const { diagnosis, alert } = this.state;
     if (!diagnosis) {
       return;
     }
-    const preview = this.resolveRemediationPreview(diagnosis, alert);
-    this.setState({ applying: true, applyResult: undefined });
-    setTimeout(() => {
+    const actionId = this.resolveActionId(diagnosis, alert);
+    if (!actionId) {
+      this.setState({ remediationError: 'No remediation action is available for this alert type.' });
+      return;
+    }
+    this.setState({ applying: true, applyResult: undefined, remediationError: undefined });
+    const encodedActionId = encodeURIComponent(actionId);
+    const { request, controller } = AxiosPostHelper(
+      `/api/v1/aiops/alerts/${encodeURIComponent(this.getAlertId())}/remediate?dryRun=false&actionId=${encodedActionId}`,
+      {},
+      cancelApplySignal
+    );
+    cancelApplySignal = controller;
+    request.then(response => {
       this.setState({
         applying: false,
-        applyResult: {
-          status: 'success',
-          appliedAt: moment().toISOString(),
-          configChanges: remediation?.config_changes ?? preview?.config_changes ?? {}
-        }
+        applyResult: { appliedAt: moment().toISOString(), plan: response.data }
       });
-    }, 1200);
+    }).catch(error => {
+      this.setState({
+        applying: false,
+        remediationError: error?.response?.data?.detail ?? error?.response?.data?.message ?? error?.message
+          ?? 'Applying the fix failed.'
+      });
+    });
   };
 
   renderAlertSummary = (alert: IStoredAlert) => {
@@ -444,8 +458,8 @@ export class AlertDiagnose extends React.Component<
                 <Button type='primary' loading={remediating} onClick={this.fix} style={{ marginRight: 8 }}>
                   Remediate (dry run)
                 </Button>
-                <Button icon={<ThunderboltOutlined />} loading={applying} onClick={this.confirmApplyFix}>
-                  Apply Fix (preview)
+                <Button icon={<ThunderboltOutlined />} loading={applying} onClick={this.confirmApplyFix} danger>
+                  Apply Fix
                 </Button>
               </div>
             </Card>
@@ -467,21 +481,26 @@ export class AlertDiagnose extends React.Component<
 
         {applyResult &&
           <Card style={{ marginTop: 16 }} className='remediation-card'
-            title={<span><CheckCircleOutlined style={{ color: '#4DCF4C', marginRight: 8 }} />Fix applied (preview)</span>}>
+            title={<span><CheckCircleOutlined style={{ color: '#4DCF4C', marginRight: 8 }} />Fix applied</span>}>
             <Descriptions size='small' column={1} bordered>
-              {Object.entries(applyResult.configChanges).map(([key, value]) =>
+              {Object.entries(applyResult.plan.config_changes).map(([key, value]) =>
                 <Descriptions.Item key={key} label={key}>{value}</Descriptions.Item>)}
               <Descriptions.Item label='Applied at'>
                 {moment(applyResult.appliedAt).format('lll')}
               </Descriptions.Item>
             </Descriptions>
-            <Alert
-              type='info'
-              showIcon
-              style={{ marginTop: 12 }}
-              message='This is a UI preview only'
-              description='Live cluster mutation is not implemented yet. Apply this change manually (e.g. via ozone admin reconfig) until automated execution ships.'
-            />
+            {applyResult.plan.execution_log.length > 0 &&
+              <Alert
+                type='success'
+                showIcon
+                style={{ marginTop: 12 }}
+                message='Execution log'
+                description={
+                  <ul style={{ margin: 0, paddingLeft: 20 }}>
+                    {applyResult.plan.execution_log.map((line, idx) => <li key={idx}>{line}</li>)}
+                  </ul>
+                }
+              />}
           </Card>}
       </div>
     );

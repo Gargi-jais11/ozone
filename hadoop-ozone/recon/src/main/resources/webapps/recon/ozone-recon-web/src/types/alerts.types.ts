@@ -63,6 +63,10 @@ export interface IRemediationPlan {
   dry_run: boolean;
   applied: boolean;
   warnings: string[];
+  // Populated only when dry_run=false and applied=true: one line per step
+  // recon-rag-service ran against the cluster (config edit, then
+  // `ozone admin reconfig ... start`).
+  execution_log: string[];
 }
 
 export interface IAlertRecord extends IStoredAlert {
@@ -95,12 +99,10 @@ export const PREVIEW_CONFIG_CHANGES_BY_ALERTNAME: Record<string, Record<string, 
   OzoneScmContainerUnderReplicated: { 'hdds.scm.replication.under.replicated.interval': '15s' }
 };
 
-// UI-only preview of what "apply fix" will look like once live remediation
-// is implemented on the backend. No cluster mutation happens today; values
-// here are simulated client-side so the interaction can be reviewed and
-// signed off before the real execution path (Recon -> Ozone reconfigure) is built.
+// Result of a real POST .../remediate?dryRun=false&actionId=... call --
+// recon-rag-service edited the target container's config and ran
+// `ozone admin reconfig ... start` (see app/remediation/live_apply.py).
 export interface IApplyFixResult {
-  status: 'success' | 'failed';
   appliedAt: string;
-  configChanges: Record<string, string>;
+  plan: IRemediationPlan;
 }

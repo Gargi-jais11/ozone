@@ -103,3 +103,7 @@ class RemediationPlan(BaseModel):
     dry_run: bool = True
     applied: bool = False
     warnings: List[str] = Field(default_factory=list)
+    # Populated only when dry_run=False and the plan was actually applied:
+    # one line per docker_executor/live_apply step that ran against the
+    # cluster (config file edit, then `ozone admin reconfig ... start`).
+    execution_log: List[str] = Field(default_factory=list)

@@ -18,9 +18,11 @@ import respx
 from fastapi.testclient import TestClient
 from httpx import Response
 
+from app.config import settings as rag_settings
 from app.main import app
 from app.plugins.container_health import INCREASE_UNDER_REPLICATED_QUEUE_FREQUENCY
 from app.plugins.om_deletion_not_progressing import INCREASE_KEY_DELETING_LIMIT
+from app.remediation import live_apply
 
 client = TestClient(app)
 
@@ -267,6 +269,53 @@ def test_remediate_live_execution_returns_501():
         json={"alert": ALERT_PAYLOAD, "action_id": INCREASE_KEY_DELETING_LIMIT},
     )
     assert response.status_code == 501
+
+
+@respx.mock
+def test_remediate_live_execution_applies_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        live_apply,
+        "apply_plan",
+        lambda context, plan: ["Set ozone.key.deleting.limit.per.task=100000 in om", "reconfig ok"],
+    )
+    object.__setattr__(rag_settings, "allow_live_remediation", True)
+    try:
+        _mock_om_endpoints()
+        response = client.post(
+            "/api/v1/remediate",
+            params={"dryRun": "false"},
+            json={"alert": ALERT_PAYLOAD, "action_id": INCREASE_KEY_DELETING_LIMIT},
+        )
+    finally:
+        object.__setattr__(rag_settings, "allow_live_remediation", False)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] is True
+    assert body["dry_run"] is False
+    assert body["execution_log"] == [
+        "Set ozone.key.deleting.limit.per.task=100000 in om", "reconfig ok",
+    ]
+
+
+@respx.mock
+def test_remediate_live_execution_returns_502_on_apply_failure(monkeypatch):
+    def failing_apply_plan(context, plan):
+        raise live_apply.LiveApplyError("Docker Engine API call failed")
+
+    monkeypatch.setattr(live_apply, "apply_plan", failing_apply_plan)
+    object.__setattr__(rag_settings, "allow_live_remediation", True)
+    try:
+        _mock_om_endpoints()
+        response = client.post(
+            "/api/v1/remediate",
+            params={"dryRun": "false"},
+            json={"alert": ALERT_PAYLOAD, "action_id": INCREASE_KEY_DELETING_LIMIT},
+        )
+    finally:
+        object.__setattr__(rag_settings, "allow_live_remediation", False)
+
+    assert response.status_code == 502
 
 
 @respx.mock

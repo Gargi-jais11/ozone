@@ -18,6 +18,13 @@
 # the cluster. Combine with monitoring.yaml so Prometheus is actually running:
 #   export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml:rag-service.yaml
 #   ./run.sh -d
+#
+# The Docker socket is mounted so recon-rag can apply a confirmed
+# remediation directly to a target container (edit its config, then
+# `ozone admin reconfig ... start`) -- see app/remediation/live_apply.py.
+# This alone does not enable live execution: it stays a dry-run-only plan
+# until RAG_ALLOW_LIVE_REMEDIATION=true is also set, e.g.:
+#   RAG_ALLOW_LIVE_REMEDIATION=true ./run.sh -d
 
 services:
   recon-rag:
@@ -33,6 +40,12 @@ services:
       - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-}
       - RAG_LLM_API_KEY=${RAG_LLM_API_KEY:-}
       - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gpt-4o-mini}
+      - RAG_ALLOW_LIVE_REMEDIATION=${RAG_ALLOW_LIVE_REMEDIATION:-false}
+      - OM_DOCKER_CONTAINER=${OM_DOCKER_CONTAINER:-ozone-om-1}
+      - SCM_DOCKER_CONTAINER=${SCM_DOCKER_CONTAINER:-ozone-scm-1}
+      - DATANODE_DOCKER_CONTAINER=${DATANODE_DOCKER_CONTAINER:-ozone-datanode-1}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - om
       - scm

@@ -120,6 +120,34 @@ def test_diagnose_drops_fix_when_no_backlog_evidence():
     assert any("unpermitted" in note for note in response.evidence)
 
 
+def test_diagnose_overrides_llm_config_changes_with_plugin_plan():
+    reply = json.dumps(
+        {
+            "what_happened": "Key deletion backlog is growing.",
+            "why_it_happened": "Scan limit is too low.",
+            "how_to_fix": "Double the limit.",
+            "evidence": ["numKeysProcessed=10"],
+            "recommended_fix": {
+                "action_id": INCREASE_KEY_DELETING_LIMIT,
+                "summary": "double the limit",
+                "config_changes": {"wrong-property-name": "999"},
+                "rationale": "because",
+            },
+        }
+    )
+    pipeline = RagPipeline(FakeVectorStore(), FakeLLMClient(reply))
+
+    response = pipeline.diagnose(
+        _context_with_backlog(**{"ozone.key.deleting.limit.per.task": "50000"}),
+        OmDeletionNotProgressingPlugin(),
+    )
+
+    assert response.recommended_fix is not None
+    assert response.recommended_fix.config_changes == {
+        "ozone.key.deleting.limit.per.task": "100000",
+    }
+
+
 def test_diagnose_drops_unpermitted_action_id():
     reply = json.dumps(
         {

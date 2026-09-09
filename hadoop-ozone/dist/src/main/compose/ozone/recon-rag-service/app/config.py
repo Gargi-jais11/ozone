@@ -67,11 +67,32 @@ class Settings:
     # (e.g. "DEBUG" to see full JMX/config payloads and LLM prompts/replies).
     log_level: str = os.environ.get("RAG_LOG_LEVEL", "INFO")
 
-    # Safety switch: this build only ever plans remediations, never applies them.
-    # Kept as an explicit setting (rather than just hardcoding False) so the
-    # /remediate handler's rejection message and behavior are driven from one
-    # place, matching how the executor is documented and tested.
+    # Safety switch: with this off (the default), /remediate only ever plans
+    # remediations and never applies them. Flipping it on additionally
+    # requires the caller to pass dryRun=false before executor.validate_and_plan
+    # will touch the cluster via app.remediation.live_apply/docker_executor.
     allow_live_remediation: bool = _env_bool("RAG_ALLOW_LIVE_REMEDIATION", False)
+
+    # Path to the Docker Engine API socket, mounted read-write into this
+    # container so live remediation can edit a target container's config and
+    # invoke `ozone admin reconfig`. Only ever dialed when a human has
+    # confirmed an apply through the Recon UI AND allow_live_remediation=true.
+    docker_socket_path: str = os.environ.get("RAG_DOCKER_SOCKET", "/var/run/docker.sock")
+
+    # Docker container names as seen by `docker ps` (not compose hostnames).
+    # Separate from OM_HTTP_ADDRESS etc. because the Docker Engine API
+    # identifies containers by name/ID, while `ozone admin reconfig` uses the
+    # service's network hostname (om/scm/datanode).
+    om_docker_container: str = os.environ.get("OM_DOCKER_CONTAINER", "ozone-om-1")
+    scm_docker_container: str = os.environ.get("SCM_DOCKER_CONTAINER", "ozone-scm-1")
+    datanode_docker_container: str = os.environ.get("DATANODE_DOCKER_CONTAINER", "ozone-datanode-1")
+
+    # Path to ozone-site.xml inside target service containers. Compose sets
+    # OZONE_CONF_DIR=/etc/hadoop, so this must match -- not /opt/hadoop/etc/hadoop,
+    # which is the source tree copy the entrypoint reads once at startup.
+    ozone_site_xml_path: str = os.environ.get(
+        "RAG_OZONE_SITE_XML_PATH", "/etc/hadoop/ozone-site.xml"
+    )
 
 
 settings = Settings()

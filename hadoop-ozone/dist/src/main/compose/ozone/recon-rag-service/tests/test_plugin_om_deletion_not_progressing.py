@@ -168,6 +168,18 @@ def test_build_remediation_plan_doubles_current_om_limit():
     assert plan.requires_restart is True
 
 
+def test_build_remediation_plan_raises_limit_to_pending_key_count():
+    context = DiagnosticContext(
+        alert=OM_ALERT,
+        jmx_metrics={"reconPendingDeleteKeys": 500},
+        config_properties={"ozone.key.deleting.limit.per.task": "1"},
+    )
+    plan = OmDeletionNotProgressingPlugin().build_remediation_plan(INCREASE_KEY_DELETING_LIMIT, context)
+
+    assert plan.config_changes == {"ozone.key.deleting.limit.per.task": "500"}
+    assert "Recon reports 500 keys pending deletion" in plan.description
+
+
 def test_build_remediation_plan_rejects_wrong_action():
     context = DiagnosticContext(alert=OM_ALERT)
     with pytest.raises(ValueError, match="not valid for the OM deletion plugin"):

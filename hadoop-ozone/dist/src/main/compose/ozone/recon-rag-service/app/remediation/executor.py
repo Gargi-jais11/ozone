@@ -13,14 +13,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Validates a requested remediation action and produces a plan.
+"""Validates a requested remediation action, produces a plan, and -- only
+when explicitly asked for -- applies it to the cluster.
 
-This module never calls out to the cluster to change anything -- it only
-ever asks a plugin to describe what a change would look like. Live
-execution (dryRun=false) is rejected unless RAG_ALLOW_LIVE_REMEDIATION is
-set, which no shipped configuration does; the flag exists purely as the
-documented seam for the (currently unimplemented) future live-execution
-path.
+A plugin always describes what a change would look like
+(build_remediation_plan) before anything is touched. When the caller passes
+dryRun=false AND RAG_ALLOW_LIVE_REMEDIATION=true, validate_and_plan hands
+that plan to app.remediation.live_apply, which edits the target container's
+config and invokes Ozone's live `ozone admin reconfig`. Both gates exist so
+a human has to explicitly opt this container into live execution
+(RAG_ALLOW_LIVE_REMEDIATION) and explicitly confirm each apply
+(dryRun=false) -- see rag-service.yaml and the Recon UI's Apply Fix flow.
 """
 
 import logging
@@ -28,6 +31,7 @@ import logging
 from app.config import settings
 from app.models import DiagnosticContext, RemediationPlan
 from app.plugins.base import AlertDiagnosticPlugin
+from app.remediation import live_apply
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +41,13 @@ class ActionNotPermittedError(ValueError):
 
 
 class LiveRemediationNotSupportedError(RuntimeError):
-    """A caller asked for dryRun=false, which this build does not support."""
+    """A caller asked for dryRun=false while RAG_ALLOW_LIVE_REMEDIATION is
+    not set on this container."""
+
+
+class LiveRemediationExecutionError(RuntimeError):
+    """A caller asked for dryRun=false, live remediation is enabled, but
+    applying the plan to the cluster failed."""
 
 
 def validate_and_plan(
@@ -86,4 +96,20 @@ def validate_and_plan(
         "validate_and_plan alert_type=%s: plan config_changes=%s dry_run=%s",
         plugin.alert_type, plan.config_changes, plan.dry_run,
     )
+
+    if not dry_run:
+        try:
+            plan.execution_log = live_apply.apply_plan(context, plan)
+            plan.applied = True
+            logger.info(
+                "validate_and_plan alert_type=%s: applied action_id=%s execution_log=%s",
+                plugin.alert_type, action_id, plan.execution_log,
+            )
+        except live_apply.LiveApplyError as exc:
+            logger.error(
+                "validate_and_plan alert_type=%s: failed to apply action_id=%s: %s",
+                plugin.alert_type, action_id, exc,
+            )
+            raise LiveRemediationExecutionError(str(exc)) from exc
+
     return plan

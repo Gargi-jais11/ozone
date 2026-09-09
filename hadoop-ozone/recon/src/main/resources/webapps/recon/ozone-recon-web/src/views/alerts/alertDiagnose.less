@@ -120,7 +120,14 @@
   border-radius: 12px;
   border: none;
   box-shadow: 0 4px 16px rgba(20, 35, 41, 0.08);
-  animation: slideFadeIn 0.5s ease-out backwards;
+  // `both` (not just `backwards`): the card must stay at the animation's
+  // final opacity:1 state once it completes, regardless of any timing hiccup
+  // (slow initial render, backgrounded tab, etc.) during the staggered
+  // per-card delay below. `backwards` alone left a window where the card
+  // could get stuck invisible at the 0% keyframe if that timing was thrown
+  // off, which is what caused "What happened?"/"Why did it happen?" to
+  // intermittently render blank.
+  animation: slideFadeIn 0.5s ease-out both;
   overflow: hidden;
 
   &:nth-child(1) { animation-delay: 0.05s; }

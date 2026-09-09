@@ -151,10 +151,19 @@ class RagPipeline:
         if fix_payload:
             action_id = fix_payload.get("action_id")
             if action_id in permitted_action_ids:
+                # Never trust LLM-supplied config_changes keys/values for apply:
+                # the plugin's build_remediation_plan is the single source of truth
+                # for which ozone-site.xml property names and values to use.
+                try:
+                    config_changes = plugin.build_remediation_plan(
+                        action_id, context
+                    ).config_changes
+                except ValueError:
+                    config_changes = fix_payload.get("config_changes", {})
                 recommended_fix = RecommendedFix(
                     action_id=action_id,
                     summary=fix_payload.get("summary", ""),
-                    config_changes=fix_payload.get("config_changes", {}),
+                    config_changes=config_changes,
                     rationale=fix_payload.get("rationale", ""),
                 )
             else:

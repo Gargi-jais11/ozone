@@ -25,6 +25,7 @@ from app.plugins.registry import get_plugin, list_plugins
 from app.rag.pipeline import get_pipeline
 from app.remediation.executor import (
     ActionNotPermittedError,
+    LiveRemediationExecutionError,
     LiveRemediationNotSupportedError,
     validate_and_plan,
 )
@@ -71,7 +72,13 @@ def diagnose(alert: AlertPayload) -> DiagnosisResponse:
 @router.post("/remediate", response_model=RemediationPlan)
 def remediate(
     request: RemediationRequest,
-    dryRun: bool = Query(True, description="Must be true; live execution is not implemented."),
+    dryRun: bool = Query(
+        True,
+        description=(
+            "true: plan only. false: apply to the cluster -- requires "
+            "RAG_ALLOW_LIVE_REMEDIATION=true on this container."
+        ),
+    ),
 ) -> RemediationPlan:
     alert_type = request.alert.alert_type
     logger.info(
@@ -98,5 +105,11 @@ def remediate(
     except LiveRemediationNotSupportedError as exc:
         logger.warning("remediate rejected for alert_type=%s: %s", alert_type, exc)
         raise HTTPException(status_code=501, detail=str(exc)) from exc
-    logger.info("remediate plan for alert_type=%s: %s", alert_type, plan.config_changes)
+    except LiveRemediationExecutionError as exc:
+        logger.error("remediate failed to apply for alert_type=%s: %s", alert_type, exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    logger.info(
+        "remediate plan for alert_type=%s: config_changes=%s applied=%s",
+        alert_type, plan.config_changes, plan.applied,
+    )
     return plan

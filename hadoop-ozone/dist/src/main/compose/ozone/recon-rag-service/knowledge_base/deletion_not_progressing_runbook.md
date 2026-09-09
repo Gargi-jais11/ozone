@@ -53,8 +53,11 @@ pipeline shows a backlog with zero progress rate for five minutes. The
 
 ### Recommended first action (OM)
 
-For cause (1), doubling `ozone.key.deleting.limit.per.task` lets the service
-scan a larger backlog per run. Requires an OM restart and is medium risk.
+For cause (1), raise `ozone.key.deleting.limit.per.task` to at least the live
+Recon delete-pending key count (`/api/v1/keys/deletePending/summary`) so
+KeyDeletingService can scan the full backlog per run. When the limit is far
+below the backlog (e.g. limit=1 with 500 pending keys), doubling alone is not
+enough. This property is live-reconfigurable on OM without restart.
 
 Causes (2)-(4) may require operator investigation beyond automated remediation.
 

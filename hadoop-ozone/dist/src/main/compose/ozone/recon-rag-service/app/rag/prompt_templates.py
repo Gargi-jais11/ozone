@@ -46,7 +46,7 @@ _OUTPUT_SCHEMA = """{
   "recommended_fix": {
     "action_id": "<one of permitted_action_ids, or omit the whole object if none apply>",
     "summary": "<one line>",
-    "config_changes": {"<property>": "<proposed value>"},
+    "config_changes": {"<exact config_property from permitted_actions>": "<proposed value>"},
     "rationale": "<why this fixes the diagnosed cause>"
   }
 }"""
@@ -67,6 +67,17 @@ def render(
         "config_properties": context.config_properties,
         "notes": context.notes,
         "permitted_action_ids": [action.action_id for action in permitted_actions],
+        # Exact property names the executor will edit -- config_changes keys must
+        # match these, not paraphrases or shorthand.
+        "permitted_actions": [
+            {
+                "action_id": action.action_id,
+                "config_property": action.config_property,
+                "description": action.description,
+            }
+            for action in permitted_actions
+            if action.config_property
+        ],
         "retrieved_sources": [document.source for document in retrieved_documents],
         "alert_confirmed_by_metrics": alert_confirmed,
         "verdict_reason": verdict_reason,
