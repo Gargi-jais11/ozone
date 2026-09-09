@@ -151,18 +151,18 @@ const NavBar: React.FC<NavBarProps> = ({
       }}
       />
     </Menu.Item>
-  ),(
-    isChatbotEnabled &&
-    <Menu.Item key='/Assistant'
-      icon={<ThunderboltOutlined />}>
-      <span>Recon AI</span>
-      <Link to='/Assistant' />
-    </Menu.Item>
   ), (
     <Menu.Item key='/Alerts'
       icon={<AlertOutlined />}>
       <span>Alerts</span>
       <Link to='/Alerts' />
+    </Menu.Item>
+  ), (
+    isChatbotEnabled &&
+    <Menu.Item key='/Assistant'
+      icon={<ThunderboltOutlined />}>
+      <span>Recon AI</span>
+      <Link to='/Assistant' />
     </Menu.Item>
   )]
   return (

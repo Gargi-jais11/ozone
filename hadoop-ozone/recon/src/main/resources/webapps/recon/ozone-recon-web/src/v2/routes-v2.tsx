@@ -29,7 +29,7 @@ const OMDBInsights = lazy(() => import('@/v2/pages/insights/omInsights'));
 const Capacity = lazy(() => import('@/v2/pages/capacity/capacity'));
 const Heatmap = lazy(() => import('@/v2/pages/heatmap/heatmap'));
 const Assistant = lazy(() => import('@/v2/pages/assistant/assistant'));
-const Alerts = lazy(() => import('@/v2/pages/alerts/alerts'));
+const Alerts = lazy(() => import('@/views/alerts/alerts'));
 
 
 export const routesV2 = [

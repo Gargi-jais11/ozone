@@ -37,3 +37,5 @@ services:
   recon:
     environment:
       - "OZONE-SITE.XML_ozone.recon.prometheus.http.endpoint=http://prometheus:9090"
+      - "OZONE-SITE.XML_ozone.recon.aiops.enabled=true"
+      - "OZONE-SITE.XML_ozone.recon.aiops.rag-service.endpoint=http://recon-rag:8642"

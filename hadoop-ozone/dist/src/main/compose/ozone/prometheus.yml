@@ -16,7 +16,12 @@
 global:
   scrape_interval: 15s # By default, scrape targets every 15 seconds.
 rule_files:
-  - /etc/alert.rules.yml
+  - /etc/ozone-aiops-alerts.yml
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
 scrape_configs:
   - job_name: ozone
     metrics_path: /prom

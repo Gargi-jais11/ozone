@@ -13,25 +13,29 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# Prometheus alerting rules for the recon-rag-service prototype (see
+# recon-rag-service/README.md). Recon's Alerts page reads active alerts
+# straight from Prometheus's own /api/v1/alerts, so these rules are the only
+# thing that makes an alert exist -- there is no Alertmanager in this build.
+#
+# alertname must match app/plugins/*.py's `alert_type` exactly, since that is
+# how recon-rag-service picks which plugin diagnoses the alert.
 groups:
-  - name: ozone
+  - name: ozone-aiops-alerts
     rules:
       - alert: OzoneDeletionNotProgressing
-        # deleting_service_metrics_num_keys_{sent_for_purge,purged} come from
-        # OM's DeletingServiceMetrics JMX bean (see recon-rag-service's
-        # deletion_not_progressing plugin/runbook). Fires when there is a
-        # purge backlog that hasn't shrunk over the evaluation window.
-        expr: >
-          (deleting_service_metrics_num_keys_sent_for_purge{component="om"}
-            - deleting_service_metrics_num_keys_purged{component="om"} > 0)
+        expr: >-
+          rate(deleting_service_metrics_num_keys_purged[10m]) == 0
           and
-          (increase(deleting_service_metrics_num_keys_purged{component="om"}[15m]) == 0)
-        for: 15m
+          deleting_service_metrics_num_keys_processed > deleting_service_metrics_num_keys_purged
+        for: 5m
         labels:
           severity: warning
+          component: om
         annotations:
           summary: "Ozone Manager key deletion is not progressing"
-          description: >
-            KeyDeletingService has a purge backlog (numKeysSentForPurge >
-            numKeysPurged) that has not shrunk in the last 15 minutes on
-            {{ $labels.instance }}.
+          description: >-
+            KeyDeletingService has keys queued for purge
+            (numKeysProcessed > numKeysPurged) but the purge rate has been
+            zero for 5 minutes.
