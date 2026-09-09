@@ -17,11 +17,14 @@
 HTTP server (OM, SCM, Recon, Datanode) at ``/jmx``.
 """
 
+import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class JmxFetchError(RuntimeError):
@@ -38,11 +41,15 @@ def fetch_beans(http_address: str, qry: Optional[str] = None) -> List[Dict[str, 
 
     url = f"http://{http_address}/jmx"
     params = {"qry": qry} if qry else None
+    logger.info("GET %s params=%s", url, params)
     try:
         response = httpx.get(url, params=params, timeout=settings.http_client_timeout_seconds)
         response.raise_for_status()
-        return response.json().get("beans", [])
+        beans = response.json().get("beans", [])
+        logger.info("GET %s (qry=%s) -> %d bean(s): %s", url, qry, len(beans), beans)
+        return beans
     except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("GET %s (qry=%s) failed: %s", url, qry, exc)
         raise JmxFetchError(f"Failed to fetch JMX beans from {url} (qry={qry}): {exc}") from exc
 
 
