@@ -38,8 +38,12 @@ import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.apache.commons.lang3.RandomUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
@@ -51,6 +55,7 @@ import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolPro
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.StorageReportProto;
 import org.apache.hadoop.hdds.scm.ContainerPlacementStatus;
 import org.apache.hadoop.hdds.scm.HddsTestUtils;
+import org.apache.hadoop.hdds.scm.container.placement.metrics.SCMNodeMetric;
 import org.apache.hadoop.hdds.scm.exceptions.SCMException;
 import org.apache.hadoop.hdds.scm.net.NetConstants;
 import org.apache.hadoop.hdds.scm.net.NetworkTopology;
@@ -65,6 +70,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -83,6 +89,8 @@ public class TestSCMContainerPlacementRackAware {
   private SCMContainerPlacementRackAware policyNoFallback;
   // node storage capacity
   private static final long STORAGE_CAPACITY = 100L;
+  private static final long HETEROGENEOUS_STORAGE_CAPACITY = 20_000L;
+  private static final int CAPACITY_WEIGHTED_ITERATIONS = 500;
   private SCMContainerPlacementMetrics metrics;
   private static final int NODE_PER_RACK = 5;
 
@@ -182,6 +190,22 @@ public class TestSCMContainerPlacementRackAware {
     when(nodeManager.getClusterNetworkTopologyMap())
         .thenReturn(cluster);
     when(nodeManager.hasAvailableSpace(any(DatanodeInfo.class))).thenReturn(true);
+    when(nodeManager.getNodeStat(any(DatanodeDetails.class))).thenAnswer(invocation -> {
+      DatanodeDetails dd = invocation.getArgument(0);
+      DatanodeInfo di = dnInfos.stream()
+          .filter(d -> d.getID().equals(dd.getID()))
+          .findFirst().orElse(null);
+      if (di == null) {
+        return null;
+      }
+      long capacity = di.getStorageReports().stream()
+          .mapToLong(StorageReportProto::getCapacity).sum();
+      long used = di.getStorageReports().stream()
+          .mapToLong(StorageReportProto::getScmUsed).sum();
+      long remaining = di.getStorageReports().stream()
+          .mapToLong(StorageReportProto::getRemaining).sum();
+      return new SCMNodeMetric(capacity, used, remaining, 0, remaining, 0);
+    });
 
     // create placement policy instances
     policy = new SCMContainerPlacementRackAware(
@@ -889,5 +913,163 @@ public class TestSCMContainerPlacementRackAware {
     assertThrows(SCMException.class,
             () -> policy.chooseDatanodes(usedNodes, null, null, 1, 0, 0),
             "No target datanode, this call should fail");
+  }
+
+  private static Stream<Arguments> rackCapacityWeightedScenarios() {
+    return Stream.of(
+        // Ratis RF=3: equal racks still produce the 2+1 RackAware layout.
+        Arguments.of("ratis3ThreeRacksEqual", new int[] {2, 2, 2},
+            new long[] {100L, 100L, 100L}, 3, 2, 2),
+        // Ratis RF=3: unequal racks must not break the 2+1 RackAware layout.
+        Arguments.of("ratis3ThreeRacksUnequal", new int[] {2, 2, 2},
+            new long[] {10L, 10L, 10_000L}, 3, 2, 2),
+        // Ratis RF=3: two equal racks plus one larger rack keeps 2+1 placement.
+        Arguments.of("ratis3TwoEqualOneLarge", new int[] {2, 2, 2},
+            new long[] {100L, 100L, 10_000L}, 3, 2, 2),
+        // Ratis RF=3: single-rack cluster allows all replicas on one rack.
+        Arguments.of("ratis3OneRack", new int[] {3},
+            new long[] {100L}, 3, 1, 3));
+  }
+
+  /**
+   * Verifies RackAware still satisfies the 2+1 Ratis layout after capacity-weighted
+   * rack selection for fresh RF=3 placement.
+   */
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("rackCapacityWeightedScenarios")
+  public void testRackCapacityWeightedRatisPlacement(String scenarioName,
+      int[] dnsPerRack, long[] remainingPerRack, int nodesRequired,
+      int expectedRackCount, int maxReplicasPerRack) throws SCMException {
+    setupHeterogeneousRacks(dnsPerRack, remainingPerRack);
+    List<DatanodeDetails> chosen = policy.chooseDatanodes(
+        Collections.emptyList(), Collections.emptyList(), nodesRequired, 0,
+        HETEROGENEOUS_STORAGE_CAPACITY);
+    assertEquals(nodesRequired, chosen.size(), scenarioName);
+
+    Map<String, Long> replicasPerRack = chosen.stream()
+        .collect(Collectors.groupingBy(DatanodeDetails::getNetworkLocation,
+            Collectors.counting()));
+    assertEquals(expectedRackCount, replicasPerRack.size(), scenarioName);
+    assertTrue(replicasPerRack.values().stream()
+            .allMatch(count -> count <= maxReplicasPerRack),
+        scenarioName + " exceeded max replicas per rack: " + replicasPerRack);
+
+    ContainerPlacementStatus status =
+        policy.validateContainerPlacement(chosen, nodesRequired);
+    assertTrue(status.isPolicySatisfied(), scenarioName);
+  }
+
+  /**
+   * Verifies the third Ratis replica lands on the highest-capacity eligible rack
+   * when two replicas already occupy a low-capacity rack.
+   */
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("crossRackCapacityScenarios")
+  public void testCrossRackReplicaPrefersHighCapacityRack(String scenarioName,
+      int[] dnsPerRack, long[] remainingPerRack, int largestRackIndex,
+      double minFractionOnLargestRack) throws SCMException {
+    setupHeterogeneousRacks(dnsPerRack, remainingPerRack);
+    List<DatanodeDetails> usedNodes = datanodes.stream()
+        .filter(dn -> dn.getNetworkLocation().equals("/rack0"))
+        .limit(2)
+        .collect(Collectors.toList());
+    String largestRack = "/rack" + largestRackIndex;
+    int largestRackSelections = 0;
+    for (int i = 0; i < CAPACITY_WEIGHTED_ITERATIONS; i++) {
+      List<DatanodeDetails> chosen = policy.chooseDatanodes(
+          usedNodes, Collections.emptyList(), 1, 0,
+          HETEROGENEOUS_STORAGE_CAPACITY);
+      assertEquals(1, chosen.size());
+      if (largestRack.equals(chosen.get(0).getNetworkLocation())) {
+        largestRackSelections++;
+      }
+      List<DatanodeDetails> combined = new ArrayList<>(usedNodes);
+      combined.add(chosen.get(0));
+      ContainerPlacementStatus status =
+          policy.validateContainerPlacement(combined, 3);
+      assertTrue(status.isPolicySatisfied(), scenarioName);
+    }
+    assertTrue(largestRackSelections >= CAPACITY_WEIGHTED_ITERATIONS * minFractionOnLargestRack,
+        scenarioName + " expected cross-rack replica on " + largestRack
+            + " but got " + largestRackSelections + " of "
+            + CAPACITY_WEIGHTED_ITERATIONS);
+  }
+
+  private static Stream<Arguments> crossRackCapacityScenarios() {
+    return Stream.of(
+        // Two replicas on rack0; third replica should strongly prefer rack2.
+        Arguments.of("ratis3ThreeRacksUnequal", new int[] {2, 2, 2},
+            new long[] {10L, 10L, 10_000L}, 2, 0.95),
+        // Two replicas on rack0; rack2 is larger than the two equal middle racks.
+        Arguments.of("ratis3TwoEqualOneLarge", new int[] {2, 2, 2},
+            new long[] {100L, 100L, 10_000L}, 2, 0.95));
+  }
+
+  private void setupHeterogeneousRacks(int[] dnsPerRack, long[] remainingPerRack) {
+    conf = new OzoneConfiguration();
+    conf.setStorageSize(OZONE_DATANODE_RATIS_VOLUME_FREE_SPACE_MIN,
+        1, StorageUnit.BYTES);
+    NodeSchema[] schemas = new NodeSchema[]
+        {ROOT_SCHEMA, RACK_SCHEMA, LEAF_SCHEMA};
+    NodeSchemaManager.getInstance().init(schemas, true);
+    cluster = new NetworkTopologyImpl(NodeSchemaManager.getInstance());
+    datanodes.clear();
+    dnInfos.clear();
+
+    for (int rackIndex = 0; rackIndex < dnsPerRack.length; rackIndex++) {
+      String rack = "/rack" + rackIndex;
+      for (int dnIndex = 0; dnIndex < dnsPerRack[rackIndex]; dnIndex++) {
+        DatanodeDetails datanodeDetails = MockDatanodeDetails.createDatanodeDetails(
+            "node-r" + rackIndex + "-d" + dnIndex, rack);
+        datanodes.add(datanodeDetails);
+        cluster.add(datanodeDetails);
+        DatanodeInfo datanodeInfo = new DatanodeInfo(
+            datanodeDetails, NodeStatus.inServiceHealthy(),
+            UpgradeUtils.defaultLayoutVersionProto(),
+            HddsTestUtils.ROLL_INTERVAL_MS_DEFAULT);
+        long remaining = remainingPerRack[rackIndex];
+        long used = HETEROGENEOUS_STORAGE_CAPACITY - remaining;
+        StorageReportProto storage = HddsTestUtils.createStorageReport(
+            datanodeInfo.getID(), "/data1-" + datanodeInfo.getID(),
+            HETEROGENEOUS_STORAGE_CAPACITY, used, remaining, null);
+        MetadataStorageReportProto metaStorage = HddsTestUtils.createMetadataStorageReport(
+            "/metadata1-" + datanodeInfo.getID(),
+            HETEROGENEOUS_STORAGE_CAPACITY, 0, remaining, null);
+        datanodeInfo.updateStorageReports(
+            new ArrayList<>(Collections.singletonList(storage)));
+        datanodeInfo.updateMetaDataStorageReports(
+            new ArrayList<>(Collections.singletonList(metaStorage)));
+        dnInfos.add(datanodeInfo);
+      }
+    }
+
+    nodeManager = mock(NodeManager.class);
+    when(nodeManager.getNodes(NodeStatus.inServiceHealthy()))
+        .thenReturn(new ArrayList<>(datanodes));
+    for (DatanodeInfo dn : dnInfos) {
+      when(nodeManager.getNode(dn.getID())).thenReturn(dn);
+    }
+    when(nodeManager.getClusterNetworkTopologyMap()).thenReturn(cluster);
+    when(nodeManager.hasAvailableSpace(any(DatanodeInfo.class))).thenReturn(true);
+    when(nodeManager.getNodeStat(any(DatanodeDetails.class))).thenAnswer(invocation -> {
+      DatanodeDetails dd = invocation.getArgument(0);
+      DatanodeInfo di = dnInfos.stream()
+          .filter(d -> d.getID().equals(dd.getID()))
+          .findFirst().orElse(null);
+      if (di == null) {
+        return null;
+      }
+      long capacity = di.getStorageReports().stream()
+          .mapToLong(StorageReportProto::getCapacity).sum();
+      long used = di.getStorageReports().stream()
+          .mapToLong(StorageReportProto::getScmUsed).sum();
+      long remaining = di.getStorageReports().stream()
+          .mapToLong(StorageReportProto::getRemaining).sum();
+      return new SCMNodeMetric(capacity, used, remaining, 0, remaining, 0);
+    });
+    policy = new SCMContainerPlacementRackAware(
+        nodeManager, conf, cluster, true, metrics);
+    policyNoFallback = new SCMContainerPlacementRackAware(
+        nodeManager, conf, cluster, false, metrics);
   }
 }

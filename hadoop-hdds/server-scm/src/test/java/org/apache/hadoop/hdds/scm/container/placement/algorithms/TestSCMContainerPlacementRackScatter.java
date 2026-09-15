@@ -43,6 +43,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -74,6 +75,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -90,6 +92,7 @@ public class TestSCMContainerPlacementRackScatter {
   private SCMContainerPlacementRackScatter policy;
   // node storage capacity
   private static final long STORAGE_CAPACITY = 100L;
+  private static final long HETEROGENEOUS_STORAGE_CAPACITY = 20_000L;
   private SCMContainerPlacementMetrics metrics;
   private static final int NODE_PER_RACK = 5;
 
@@ -916,6 +919,108 @@ public class TestSCMContainerPlacementRackScatter {
         policy.chooseDatanodes(usedDns, excludedDns,
             null, 1, 0, 5);
     assertEquals(1, chosenNodes.size());
+  }
+
+  private static Stream<Arguments> rackCapacityWeightedScenarios() {
+    return Stream.of(
+        // Ratis RF=3: equal rack capacity still spreads one replica per rack.
+        Arguments.of("ratis3ThreeRacksEqual", new int[] {2, 2, 2},
+            new long[] {100L, 100L, 100L}, 3, 3, 1, -1),
+        // Ratis RF=3: unequal rack capacity must not break scatter placement.
+        Arguments.of("ratis3ThreeRacksUnequal", new int[] {2, 2, 2},
+            new long[] {10L, 10L, 10_000L}, 3, 3, 1, -1),
+        // Ratis RF=3: two equal racks plus one larger rack still spans 3 racks.
+        Arguments.of("ratis3TwoEqualOneLarge", new int[] {2, 2, 2},
+            new long[] {100L, 100L, 10_000L}, 3, 3, 1, -1),
+        // Ratis RF=3: single-rack cluster allows all replicas on one rack.
+        Arguments.of("ratis3OneRack", new int[] {3},
+            new long[] {100L}, 3, 1, 3, -1),
+        // EC 3+2 (5 nodes): five equal racks get one replica each.
+        Arguments.of("ec5FiveRacksEqual", new int[] {2, 2, 2, 2, 2},
+            new long[] {100L, 100L, 100L, 100L, 100L}, 5, 5, 1, -1),
+        // EC 3+2 (5 nodes): five unequal racks still scatter one per rack.
+        Arguments.of("ec5FiveRacksUnequal", new int[] {2, 2, 2, 2, 2},
+            new long[] {10L, 50L, 100L, 500L, 10_000L}, 5, 5, 1, -1),
+        // EC 3+2 (5 nodes): three equal racks allow at most two replicas per rack.
+        Arguments.of("ec5ThreeRacksEqual", new int[] {3, 3, 3},
+            new long[] {100L, 100L, 100L}, 5, 3, 2, -1),
+        // EC 3+2 (5 nodes): three unequal racks still respect max-two-per-rack.
+        Arguments.of("ec5ThreeRacksUnequal", new int[] {3, 3, 3},
+            new long[] {10L, 100L, 10_000L}, 5, 3, 2, -1),
+        // Single replica: capacity ordering must pick the highest-capacity rack.
+        Arguments.of("singleNodePrefersHighestCapacityRack", new int[] {2, 2, 2},
+            new long[] {10L, 10L, 10_000L}, 1, 1, 1, 2));
+  }
+
+  /**
+   * Verifies RackScatter honors rack scatter rules with capacity-weighted rack
+   * ordering across Ratis RF=3 and EC 3+2 cluster shapes.
+   */
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("rackCapacityWeightedScenarios")
+  public void testRackCapacityWeightedPlacement(String scenarioName,
+      int[] dnsPerRack, long[] remainingPerRack, int nodesRequired,
+      int expectedRackCount, int maxReplicasPerRack, int expectedRackIndex)
+      throws SCMException {
+    setupHeterogeneousRacks(dnsPerRack, remainingPerRack);
+    List<DatanodeDetails> chosen = policy.chooseDatanodes(
+        Collections.emptyList(), Collections.emptyList(), nodesRequired, 0,
+        HETEROGENEOUS_STORAGE_CAPACITY);
+    assertEquals(nodesRequired, chosen.size(), scenarioName);
+
+    Map<String, Long> replicasPerRack = chosen.stream()
+        .collect(Collectors.groupingBy(DatanodeDetails::getNetworkLocation,
+            Collectors.counting()));
+    assertEquals(expectedRackCount, replicasPerRack.size(), scenarioName);
+    assertTrue(replicasPerRack.values().stream()
+            .allMatch(count -> count <= maxReplicasPerRack),
+        scenarioName + " exceeded max replicas per rack: " + replicasPerRack);
+
+    ContainerPlacementStatus status =
+        policy.validateContainerPlacement(chosen, nodesRequired);
+    assertTrue(status.isPolicySatisfied(), scenarioName);
+
+    if (expectedRackIndex >= 0) {
+      String expectedRack = "/rack" + expectedRackIndex;
+      assertEquals(expectedRack, chosen.get(0).getNetworkLocation(), scenarioName);
+    }
+  }
+
+  private void setupHeterogeneousRacks(int[] dnsPerRack, long[] remainingPerRack) {
+    setupConfiguration();
+    datanodes.clear();
+    dnInfos.clear();
+    for (int rackIndex = 0; rackIndex < dnsPerRack.length; rackIndex++) {
+      String rack = "/rack" + rackIndex;
+      for (int dnIndex = 0; dnIndex < dnsPerRack[rackIndex]; dnIndex++) {
+        DatanodeDetails datanodeDetails = MockDatanodeDetails.createDatanodeDetails(
+            "node-r" + rackIndex + "-d" + dnIndex, rack);
+        setupDatanodeWithRemaining(datanodeDetails, remainingPerRack[rackIndex]);
+      }
+    }
+    createMocksAndUpdateStorageReports(datanodes.size());
+  }
+
+  private void setupDatanodeWithRemaining(DatanodeDetails datanodeDetails,
+      long remaining) {
+    datanodes.add(datanodeDetails);
+    cluster.add(datanodeDetails);
+    DatanodeInfo datanodeInfo = new DatanodeInfo(
+        datanodeDetails, NodeStatus.inServiceHealthy(),
+        UpgradeUtils.defaultLayoutVersionProto(),
+        HddsTestUtils.ROLL_INTERVAL_MS_DEFAULT);
+    long used = HETEROGENEOUS_STORAGE_CAPACITY - remaining;
+    StorageReportProto storage = HddsTestUtils.createStorageReport(
+        datanodeInfo.getID(), "/data1-" + datanodeInfo.getID(),
+        HETEROGENEOUS_STORAGE_CAPACITY, used, remaining, null);
+    MetadataStorageReportProto metaStorage = HddsTestUtils.createMetadataStorageReport(
+        "/metadata1-" + datanodeInfo.getID(),
+        HETEROGENEOUS_STORAGE_CAPACITY, 0, remaining, null);
+    datanodeInfo.updateStorageReports(
+        new ArrayList<>(Collections.singletonList(storage)));
+    datanodeInfo.updateMetaDataStorageReports(
+        new ArrayList<>(Collections.singletonList(metaStorage)));
+    dnInfos.add(datanodeInfo);
   }
 
   @Test

@@ -44,6 +44,13 @@ import org.slf4j.LoggerFactory;
  * 3 replica, two replica will be on the same rack, the third one will on a
  * different rack.
  * <p>
+ * Rack selection for datanodes without a same-rack affinity constraint is
+ * weighted by aggregate remaining data-volume capacity on each rack (sum of
+ * storage-report remaining bytes for eligible datanodes under the rack). Racks
+ * with more free space are preferred. When rack capacities are equal or
+ * unavailable, selection falls back to uniform random choice. Same-rack replica
+ * selection uses affinity and is not weighted.
+ * <p>
  * This implementation applies to network topology like "/rack/node". Don't
  * recommend to use this if the network topology has more layers.
  * <p>
@@ -62,6 +69,17 @@ public final class SCMContainerPlacementRackAware
   private static final int REQUIRED_RACKS = 2;
   private static final String META_DATA_SIZE_REQUIRED = "metadataSizeRequired";
   private static final String DATA_SIZE_REQUIRED = "dataSizeRequired";
+
+  private static final class PlacementDecisionContext {
+    private final Map<String, Long> mapSizeRequired;
+    private final Map<Node, Long> rackCapacities;
+
+    private PlacementDecisionContext(Map<String, Long> mapSizeRequired,
+        Map<Node, Long> rackCapacities) {
+      this.mapSizeRequired = mapSizeRequired;
+      this.rackCapacities = rackCapacities;
+    }
+  }
 
   /**
    * Constructs a Container Placement with rack awareness.
@@ -101,6 +119,7 @@ public final class SCMContainerPlacementRackAware
    * @throws SCMException  SCMException
    */
   @Override
+  @SuppressWarnings("checkstyle:methodlength")
   protected List<DatanodeDetails> chooseDatanodesInternal(
       List<DatanodeDetails> usedNodes,
       List<DatanodeDetails> excludedNodes,
@@ -119,15 +138,13 @@ public final class SCMContainerPlacementRackAware
     }
     Preconditions.checkArgument(nodesRequired > 0);
     metrics.incrDatanodeRequestCount(nodesRequired);
-    int datanodeCount = networkTopology.getNumOfLeafNode(NetConstants.ROOT);
+    Map<Node, Long> rackCapacities =
+        buildRackRemainingCapacityMap(networkTopology);
+    PlacementDecisionContext placementContext =
+        new PlacementDecisionContext(mapSizeRequired, rackCapacities);
     int excludedNodesCount = excludedNodes == null ? 0 : excludedNodes.size();
     int usedNodesCount = usedNodes == null ? 0 : usedNodes.size();
-    if (datanodeCount < nodesRequired + excludedNodesCount + usedNodesCount) {
-      throw new SCMException("No enough datanodes to choose. " +
-          "TotalNode = " + datanodeCount + " RequiredNode = " + nodesRequired +
-          " ExcludedNode = " + excludedNodesCount +
-          " UsedNode = " + usedNodesCount, null);
-    }
+    validateEnoughDatanodes(nodesRequired, excludedNodesCount, usedNodesCount);
     List<DatanodeDetails> mutableFavoredNodes = favoredNodes;
     // sanity check of favoredNodes
     if (mutableFavoredNodes != null && excludedNodes != null) {
@@ -158,7 +175,7 @@ public final class SCMContainerPlacementRackAware
       } else {
         firstNode = chooseNode(mutableExcludedNodes, null,
             null, metadataSizeRequired,
-            dataSizeRequired);
+            dataSizeRequired, rackCapacities);
       }
       chosenNodes.add(firstNode);
       nodesRequired--;
@@ -176,7 +193,8 @@ public final class SCMContainerPlacementRackAware
       } else {
         mutableExcludedNodes.add(firstNode);
         secondNode = chooseNode(mutableExcludedNodes, Arrays.asList(firstNode),
-            Arrays.asList(firstNode), metadataSizeRequired, dataSizeRequired);
+            Arrays.asList(firstNode), metadataSizeRequired, dataSizeRequired,
+            rackCapacities);
       }
       chosenNodes.add(secondNode);
       nodesRequired--;
@@ -201,7 +219,8 @@ public final class SCMContainerPlacementRackAware
           favorIndex++;
         } else {
           firstNode = chooseNode(mutableExcludedNodes, mutableUsedNodes,
-              mutableUsedNodes, metadataSizeRequired, dataSizeRequired);
+              mutableUsedNodes, metadataSizeRequired, dataSizeRequired,
+              rackCapacities);
         }
         chosenNodes.add(firstNode);
         nodesRequired--;
@@ -225,7 +244,7 @@ public final class SCMContainerPlacementRackAware
               mutableExcludedNodes.addAll(mutableUsedNodes);
               return chooseNodes(mutableExcludedNodes, chosenNodes,
                   mutableFavoredNodes, mutableUsedNodes, favorIndex,
-                  nodesRequired, mapSizeRequired);
+                  nodesRequired, placementContext);
             }
           }
         }
@@ -240,7 +259,8 @@ public final class SCMContainerPlacementRackAware
         } else {
           secondNode =
               chooseNode(mutableExcludedNodes, mutableUsedNodes,
-                  mutableUsedNodes, metadataSizeRequired, dataSizeRequired);
+                  mutableUsedNodes, metadataSizeRequired, dataSizeRequired,
+                  rackCapacities);
         }
         chosenNodes.add(secondNode);
         mutableExcludedNodes.add(secondNode);
@@ -254,7 +274,18 @@ public final class SCMContainerPlacementRackAware
     }
     // choose remaining nodes on different racks
     return chooseNodes(mutableExcludedNodes, chosenNodes, mutableFavoredNodes,
-        mutableUsedNodes, favorIndex, nodesRequired, mapSizeRequired);
+        mutableUsedNodes, favorIndex, nodesRequired, placementContext);
+  }
+
+  private void validateEnoughDatanodes(int nodesRequired, int excludedNodesCount,
+      int usedNodesCount) throws SCMException {
+    int datanodeCount = networkTopology.getNumOfLeafNode(NetConstants.ROOT);
+    if (datanodeCount < nodesRequired + excludedNodesCount + usedNodesCount) {
+      throw new SCMException("No enough datanodes to choose. " +
+          "TotalNode = " + datanodeCount + " RequiredNode = " + nodesRequired +
+          " ExcludedNode = " + excludedNodesCount +
+          " UsedNode = " + usedNodesCount, null);
+    }
   }
 
   /**
@@ -289,6 +320,10 @@ public final class SCMContainerPlacementRackAware
     }
     long metadataSizeRequired = mapSizeRequired.get(META_DATA_SIZE_REQUIRED);
     long dataSizeRequired = mapSizeRequired.get(DATA_SIZE_REQUIRED);
+    Map<Node, Long> rackCapacities =
+        buildRackRemainingCapacityMap(networkTopology);
+    PlacementDecisionContext placementContext =
+        new PlacementDecisionContext(mapSizeRequired, rackCapacities);
     List<DatanodeDetails> mutableFavoredNodes = favoredNodes;
     List<DatanodeDetails> mutableUsedNodes = new ArrayList<>();
     // sanity check of favoredNodes
@@ -313,7 +348,7 @@ public final class SCMContainerPlacementRackAware
         favorIndex++;
       } else {
         firstNode = chooseNode(null, null, null, metadataSizeRequired,
-            dataSizeRequired);
+            dataSizeRequired, rackCapacities);
       }
       chosenNodes.add(firstNode);
       nodesRequired--;
@@ -331,7 +366,8 @@ public final class SCMContainerPlacementRackAware
         favorIndex++;
       } else {
         secondNode = chooseNode(chosenNodes, Arrays.asList(firstNode),
-            Arrays.asList(firstNode), metadataSizeRequired, dataSizeRequired);
+            Arrays.asList(firstNode), metadataSizeRequired, dataSizeRequired,
+            rackCapacities);
       }
       chosenNodes.add(secondNode);
       nodesRequired--;
@@ -342,7 +378,7 @@ public final class SCMContainerPlacementRackAware
       mutableUsedNodes.addAll(chosenNodes);
       // choose remaining datanodes on different rack as first and second
       return chooseNodes(null, chosenNodes, mutableFavoredNodes,
-          mutableUsedNodes, favorIndex, nodesRequired, mapSizeRequired);
+          mutableUsedNodes, favorIndex, nodesRequired, placementContext);
     } else {
       List<DatanodeDetails> mutableExcludedNodes = new ArrayList<>(excludedNodes);
       // choose node to meet replication requirement
@@ -359,7 +395,8 @@ public final class SCMContainerPlacementRackAware
           favorIndex++;
         } else {
           firstNode = chooseNode(mutableExcludedNodes, excludedNodes,
-              excludedNodes, metadataSizeRequired, dataSizeRequired);
+              excludedNodes, metadataSizeRequired, dataSizeRequired,
+              rackCapacities);
         }
         chosenNodes.add(firstNode);
         nodesRequired--;
@@ -370,7 +407,7 @@ public final class SCMContainerPlacementRackAware
         mutableUsedNodes.addAll(chosenNodes);
         mutableUsedNodes.addAll(mutableExcludedNodes);
         return chooseNodes(null, chosenNodes, mutableFavoredNodes,
-            mutableUsedNodes, favorIndex, nodesRequired, mapSizeRequired);
+            mutableUsedNodes, favorIndex, nodesRequired, placementContext);
       }
       // case 2: two or more excluded nodes, if these two nodes are
       // in the same rack, then choose nodes on different racks, otherwise,
@@ -385,7 +422,7 @@ public final class SCMContainerPlacementRackAware
             mutableUsedNodes.addAll(mutableExcludedNodes);
             return chooseNodes(mutableExcludedNodes, chosenNodes,
                 mutableFavoredNodes, mutableUsedNodes, favorIndex,
-                nodesRequired, mapSizeRequired);
+                nodesRequired, placementContext);
           }
         }
       }
@@ -400,7 +437,7 @@ public final class SCMContainerPlacementRackAware
       } else {
         secondNode =
             chooseNode(chosenNodes, mutableExcludedNodes, mutableExcludedNodes,
-                metadataSizeRequired, dataSizeRequired);
+                metadataSizeRequired, dataSizeRequired, rackCapacities);
       }
       chosenNodes.add(secondNode);
       mutableExcludedNodes.add(secondNode);
@@ -413,7 +450,7 @@ public final class SCMContainerPlacementRackAware
       mutableUsedNodes.addAll(mutableExcludedNodes);
       return chooseNodes(mutableExcludedNodes, chosenNodes, mutableFavoredNodes,
           mutableUsedNodes,
-          favorIndex, nodesRequired, mapSizeRequired);
+          favorIndex, nodesRequired, placementContext);
     }
   }
 
@@ -433,15 +470,15 @@ public final class SCMContainerPlacementRackAware
    *                    affinityNodes. Can be null.
    * @param usedNodes - the chosen nodes should be on the different rack
    *                    than usedNodes rack when affinityNode is null.
-   * @param dataSizeRequired - size required for the container.
    * @param metadataSizeRequired - size required for Ratis metadata.
+   * @param rackCapacities aggregate remaining bytes per rack for this placement
    * @return List of chosen datanodes.
    * @throws SCMException  SCMException
    */
   private DatanodeDetails chooseNode(List<DatanodeDetails> excludedNodes,
       List<DatanodeDetails> affinityNodes, List<DatanodeDetails> usedNodes,
       long metadataSizeRequired,
-      long dataSizeRequired) throws SCMException {
+      long dataSizeRequired, Map<Node, Long> rackCapacities) throws SCMException {
     int ancestorGen = RACK_LEVEL;
     int maxRetry = MAX_RETRY;
     List<String> excludedNodesForCapacity = null;
@@ -473,8 +510,17 @@ public final class SCMContainerPlacementRackAware
           }
         }
       } else {
-        node = (DatanodeDetails)networkTopology.chooseRandom(NetConstants.ROOT,
-            excludedNodesForCapacity, excludedNodes, null, ancestorGen);
+        List<Node> candidateRacks = getCandidateRacks(excludedNodes, networkTopology);
+        Node targetRack = weightedRandomRack(candidateRacks, rackCapacities);
+        if (targetRack != null) {
+          node = (DatanodeDetails) networkTopology.chooseRandom(
+              targetRack.getNetworkFullPath(), excludedNodesForCapacity, null,
+              null, 0);
+        }
+        if (node == null) {
+          node = (DatanodeDetails) networkTopology.chooseRandom(NetConstants.ROOT,
+              excludedNodesForCapacity, excludedNodes, null, ancestorGen);
+        }
       }
 
       if (node == null) {
@@ -547,7 +593,7 @@ public final class SCMContainerPlacementRackAware
    * @param usedNodes - list of the nodes that are already used.
    * @param favorIndex - the node index of favoredNodes which is not chosen yet.
    * @param nodesRequired - number of datanodes required.
-   * @param mapSizeRequired - size required for the container, Ratis metadata.
+   * @param placementContext size requirements and rack capacity weights
    * @return List of chosen datanodes.
    * @throws SCMException  SCMException
    */
@@ -555,7 +601,8 @@ public final class SCMContainerPlacementRackAware
       List<DatanodeDetails> chosenNodes, List<DatanodeDetails> favoredNodes,
       List<DatanodeDetails> usedNodes,
       int favorIndex, int nodesRequired,
-      Map<String, Long> mapSizeRequired) throws SCMException {
+      PlacementDecisionContext placementContext)
+      throws SCMException {
     Preconditions.checkArgument(chosenNodes != null);
     List<DatanodeDetails> excludedNodeList = excludedNodes != null ?
         excludedNodes : chosenNodes;
@@ -570,8 +617,9 @@ public final class SCMContainerPlacementRackAware
         favorIndex++;
       } else {
         chosenNode = chooseNode(excludedNodeList, null, usedNodes,
-            mapSizeRequired.get(META_DATA_SIZE_REQUIRED),
-            mapSizeRequired.get(DATA_SIZE_REQUIRED));
+            placementContext.mapSizeRequired.get(META_DATA_SIZE_REQUIRED),
+            placementContext.mapSizeRequired.get(DATA_SIZE_REQUIRED),
+            placementContext.rackCapacities);
       }
       excludedNodeList.add(chosenNode);
       usedNodes.add(chosenNode);

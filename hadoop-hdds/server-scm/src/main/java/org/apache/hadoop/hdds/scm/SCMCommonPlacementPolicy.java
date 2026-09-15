@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.MetadataStorageReportProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.StorageReportProto;
 import org.apache.hadoop.hdds.scm.container.ContainerReplica;
 import org.apache.hadoop.hdds.scm.container.placement.algorithms.ContainerPlacementStatusDefault;
 import org.apache.hadoop.hdds.scm.exceptions.SCMException;
@@ -65,6 +66,11 @@ public abstract class SCMCommonPlacementPolicy implements
   private final Random rand = new Random();
   private final ConfigurationSource conf;
   private final boolean shouldRemovePeers;
+
+  /**
+   * Topology ancestor generation that corresponds to a rack.
+   */
+  protected static final int RACK_ANCESTOR_GENERATION = 1;
 
   /**
    * Return for replication factor 1 containers where the placement policy
@@ -600,6 +606,165 @@ public abstract class SCMCommonPlacementPolicy implements
 
   protected Node getPlacementGroup(DatanodeDetails dn) {
     return nodeManager.getClusterNetworkTopologyMap().getAncestor(dn, 1);
+  }
+
+  /**
+   * Builds aggregate allocatable remaining capacity for every rack in one pass
+   * over leaf datanodes. Each rack weight is the sum of storage-report
+   * remaining bytes for writable, in-service healthy datanodes under that rack
+   * that also have an available container slot.
+   * <p>
+   * Remaining bytes are read directly from the already-resolved
+   * {@link DatanodeInfo}'s storage reports instead of calling {@code getNodeStat()}, which
+   * would otherwise re-resolve the datanode a second time per node on every
+   * placement decision.
+   * <p>
+   * Call once per {@code chooseDatanodes()} invocation and reuse the returned
+   * map for all rack-weighted picks in that placement decision.
+   */
+  protected Map<Node, Long> buildRackRemainingCapacityMap(NetworkTopology topology) {
+    Map<Node, Long> rackCapacities = new HashMap<>();
+    if (topology == null) {
+      return rackCapacities;
+    }
+    int leafLevel = topology.getMaxLevel();
+    for (Node node : topology.getNodes(leafLevel)) {
+      if (!(node instanceof DatanodeDetails)) {
+        continue;
+      }
+      DatanodeDetails datanodeDetails = (DatanodeDetails) node;
+      DatanodeDetails resolved = nodeManager.getNode(datanodeDetails.getID());
+      if (!(resolved instanceof DatanodeInfo)) {
+        continue;
+      }
+      DatanodeInfo datanodeInfo = (DatanodeInfo) resolved;
+      if (!datanodeInfo.getNodeStatus().isNodeWritable()) {
+        continue;
+      }
+      if (!nodeManager.hasAvailableSpace(datanodeInfo)) {
+        continue;
+      }
+      Node rack = topology.getAncestor(node, RACK_ANCESTOR_GENERATION);
+      if (rack == null) {
+        continue;
+      }
+      long remaining = 0L;
+      for (StorageReportProto report : datanodeInfo.getStorageReports()) {
+        remaining += report.getRemaining();
+      }
+      rackCapacities.merge(rack, remaining, Long::sum);
+    }
+    return rackCapacities;
+  }
+
+  /**
+   * Picks a rack with probability proportional to aggregate remaining capacity.
+   * Falls back to uniform selection when all rack weights are zero.
+   *
+   * @param rackCapacities aggregate remaining bytes per rack, built once per
+   *        placement decision via {@link #buildRackRemainingCapacityMap}
+   */
+  protected Node weightedRandomRack(List<Node> racks, Map<Node, Long> rackCapacities) {
+    if (racks == null || racks.isEmpty()) {
+      return null;
+    }
+    if (racks.size() == 1) {
+      return racks.get(0);
+    }
+    long totalWeight = 0L;
+    long[] weights = new long[racks.size()];
+    for (int i = 0; i < racks.size(); i++) {
+      weights[i] = rackCapacities.getOrDefault(racks.get(i), 0L);
+      totalWeight += weights[i];
+    }
+    if (totalWeight == 0L) {
+      return racks.get(rand.nextInt(racks.size()));
+    }
+    long target = nextBoundedLong(totalWeight);
+    long cumulative = 0L;
+    for (int i = 0; i < racks.size(); i++) {
+      cumulative += weights[i];
+      if (target < cumulative) {
+        return racks.get(i);
+      }
+    }
+    return racks.get(racks.size() - 1);
+  }
+
+  /**
+   * Orders racks by descending aggregate remaining capacity. Racks with equal
+   * capacity are shuffled to avoid deterministic hot-rack ordering.
+   *
+   * @param rackCapacities aggregate remaining bytes per rack, built once per
+   *        placement decision via {@link #buildRackRemainingCapacityMap}
+   */
+  protected List<Node> orderRacksByRemainingCapacity(List<Node> racks,
+      Map<Node, Long> rackCapacities) {
+    List<Node> sorted = new ArrayList<>(racks);
+    sorted.sort((left, right) -> Long.compare(
+        rackCapacities.getOrDefault(right, 0L),
+        rackCapacities.getOrDefault(left, 0L)));
+    List<Node> ordered = new ArrayList<>(sorted.size());
+    int index = 0;
+    while (index < sorted.size()) {
+      long capacity = rackCapacities.getOrDefault(sorted.get(index), 0L);
+      int groupEnd = index + 1;
+      while (groupEnd < sorted.size()
+          && rackCapacities.getOrDefault(sorted.get(groupEnd), 0L) == capacity) {
+        groupEnd++;
+      }
+      List<Node> group = new ArrayList<>(sorted.subList(index, groupEnd));
+      if (group.size() > 1) {
+        Collections.shuffle(group, rand);
+      }
+      ordered.addAll(group);
+      index = groupEnd;
+    }
+    return ordered;
+  }
+
+  /**
+   * Returns a uniform random long in {@code [0, bound)} without {@code double}
+   * precision loss for large {@code bound} values.
+   */
+  private long nextBoundedLong(long bound) {
+    if (bound <= 0) {
+      throw new IllegalArgumentException("bound must be positive: " + bound);
+    }
+    long bits;
+    long val;
+    do {
+      bits = rand.nextLong() & Long.MAX_VALUE;
+      val = bits % bound;
+    } while (bits - val + (bound - 1) < 0);
+    return val;
+  }
+
+  /**
+   * Returns racks that are not excluded by datanodes already used in the
+   * current placement decision.
+   */
+  protected List<Node> getCandidateRacks(List<DatanodeDetails> rackExcludedNodes,
+      NetworkTopology topology) {
+    int rackLevel = topology.getMaxLevel() - 1;
+    List<Node> allRacks = topology.getNodes(rackLevel);
+    if (rackExcludedNodes == null || rackExcludedNodes.isEmpty()) {
+      return new ArrayList<>(allRacks);
+    }
+    Set<Node> excludedRacks = new HashSet<>();
+    for (DatanodeDetails datanode : rackExcludedNodes) {
+      Node rack = topology.getAncestor(datanode, RACK_ANCESTOR_GENERATION);
+      if (rack != null) {
+        excludedRacks.add(rack);
+      }
+    }
+    List<Node> candidates = new ArrayList<>();
+    for (Node rack : allRacks) {
+      if (!excludedRacks.contains(rack)) {
+        candidates.add(rack);
+      }
+    }
+    return candidates;
   }
 
   /**

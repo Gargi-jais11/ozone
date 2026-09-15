@@ -50,6 +50,13 @@ import org.slf4j.LoggerFactory;
  * This placement policy will try to distribute datanodes on as many racks as
  * possible.
  * <p>
+ * Racks are ordered by aggregate remaining data-volume capacity (sum of
+ * storage-report remaining bytes for eligible datanodes under each rack)
+ * before scatter placement iterates them. Higher-capacity racks are tried
+ * first. Racks with equal capacity are shuffled to avoid deterministic
+ * ordering. When capacities are equal, behavior matches uniform
+ * rack ordering.
+ * <p>
  * This implementation applies to network topology like "/rack/node". Don't
  * recommend to use this if the network topology has more layers.
  * <p>
@@ -264,7 +271,9 @@ public final class SCMContainerPlacementRackScatter
     if (usedNodes == null) {
       usedNodes = Collections.emptyList();
     }
-    List<Node> racks = getAllRacks();
+    Map<Node, Long> rackCapacities =
+        buildRackRemainingCapacityMap(networkTopology);
+    List<Node> racks = getAllRacks(rackCapacities);
     // usedRacksCntMap maps a rack to the number of usedNodes it contains
     Map<Node, Integer> usedRacksCntMap = new HashMap<>();
     for (Node node : usedNodes) {
@@ -588,11 +597,10 @@ public final class SCMContainerPlacementRackScatter
     return result;
   }
 
-  private List<Node> getAllRacks() {
+  private List<Node> getAllRacks(Map<Node, Long> rackCapacities) {
     int rackLevel = networkTopology.getMaxLevel() - 1;
     List<Node> racks = networkTopology.getNodes(rackLevel);
-    Collections.shuffle(racks);
-    return racks;
+    return orderRacksByRemainingCapacity(racks, rackCapacities);
   }
 
 }

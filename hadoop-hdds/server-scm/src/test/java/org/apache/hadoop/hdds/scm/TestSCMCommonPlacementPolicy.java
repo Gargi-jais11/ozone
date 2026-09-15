@@ -17,11 +17,17 @@
 
 package org.apache.hadoop.hdds.scm;
 
+import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.NodeOperationalState.DECOMMISSIONING;
+import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.NodeState.HEALTHY;
 import static org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ContainerReplicaProto.State.CLOSED;
+import static org.apache.hadoop.hdds.scm.net.NetConstants.LEAF_SCHEMA;
+import static org.apache.hadoop.hdds.scm.net.NetConstants.RACK_SCHEMA;
+import static org.apache.hadoop.hdds.scm.net.NetConstants.ROOT_SCHEMA;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -59,12 +65,16 @@ import org.apache.hadoop.hdds.scm.container.ContainerReplica;
 import org.apache.hadoop.hdds.scm.container.MockNodeManager;
 import org.apache.hadoop.hdds.scm.exceptions.SCMException;
 import org.apache.hadoop.hdds.scm.net.NetworkTopology;
+import org.apache.hadoop.hdds.scm.net.NetworkTopologyImpl;
 import org.apache.hadoop.hdds.scm.net.Node;
+import org.apache.hadoop.hdds.scm.net.NodeSchema;
+import org.apache.hadoop.hdds.scm.net.NodeSchemaManager;
 import org.apache.hadoop.hdds.scm.node.DatanodeInfo;
 import org.apache.hadoop.hdds.scm.node.NodeManager;
 import org.apache.hadoop.hdds.scm.node.NodeStatus;
 import org.apache.hadoop.hdds.scm.node.states.NodeNotFoundException;
 import org.apache.hadoop.ozone.container.common.SCMTestUtils;
+import org.apache.hadoop.ozone.container.upgrade.UpgradeUtils;
 import org.apache.ozone.test.GenericTestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -584,6 +594,104 @@ public class TestSCMCommonPlacementPolicy {
     assertTrue(status.isPolicySatisfied(),
         "placement should not crash and should be considered satisfied "
             + "when the topology reports no racks");
+  }
+
+  @Test
+  public void testBuildRackRemainingCapacityMapFiltersIneligibleNodes() {
+    NodeSchema[] schemas = new NodeSchema[] {ROOT_SCHEMA, RACK_SCHEMA, LEAF_SCHEMA};
+    NodeSchemaManager.getInstance().init(schemas, true);
+    NetworkTopologyImpl topology = new NetworkTopologyImpl(NodeSchemaManager.getInstance());
+
+    DatanodeDetails healthyDn =
+        MockDatanodeDetails.createDatanodeDetails("healthy", "/rack0");
+    DatanodeDetails decommissioningDn =
+        MockDatanodeDetails.createDatanodeDetails("decom", "/rack1");
+    DatanodeDetails fullDn =
+        MockDatanodeDetails.createDatanodeDetails("full", "/rack0");
+    topology.add(healthyDn);
+    topology.add(decommissioningDn);
+    topology.add(fullDn);
+
+    DatanodeInfo healthyInfo = new DatanodeInfo(
+        healthyDn, NodeStatus.inServiceHealthy(),
+        UpgradeUtils.defaultLayoutVersionProto(),
+        HddsTestUtils.ROLL_INTERVAL_MS_DEFAULT);
+    DatanodeInfo decomInfo = new DatanodeInfo(
+        decommissioningDn, NodeStatus.valueOf(DECOMMISSIONING, HEALTHY),
+        UpgradeUtils.defaultLayoutVersionProto(),
+        HddsTestUtils.ROLL_INTERVAL_MS_DEFAULT);
+    DatanodeInfo fullInfo = new DatanodeInfo(
+        fullDn, NodeStatus.inServiceHealthy(),
+        UpgradeUtils.defaultLayoutVersionProto(),
+        HddsTestUtils.ROLL_INTERVAL_MS_DEFAULT);
+
+    // Remaining bytes are read directly from storage reports (see
+    // buildRackRemainingCapacityMap), not from getNodeStat().
+    healthyInfo.updateStorageReports(new ArrayList<>(Collections.singletonList(
+        HddsTestUtils.createStorageReport(
+            healthyInfo.getID(), "/data-" + healthyInfo.getID(), 100L, 10L, 90L, null))));
+    decomInfo.updateStorageReports(new ArrayList<>(Collections.singletonList(
+        HddsTestUtils.createStorageReport(
+            decomInfo.getID(), "/data-" + decomInfo.getID(), 100L, 10L, 90L, null))));
+    fullInfo.updateStorageReports(new ArrayList<>(Collections.singletonList(
+        HddsTestUtils.createStorageReport(
+            fullInfo.getID(), "/data-" + fullInfo.getID(), 100L, 99L, 1L, null))));
+
+    NodeManager mockNodeManager = mock(NodeManager.class);
+    when(mockNodeManager.getNode(healthyDn.getID())).thenReturn(healthyInfo);
+    when(mockNodeManager.getNode(decommissioningDn.getID())).thenReturn(decomInfo);
+    when(mockNodeManager.getNode(fullDn.getID())).thenReturn(fullInfo);
+    when(mockNodeManager.hasAvailableSpace(healthyInfo)).thenReturn(true);
+    when(mockNodeManager.hasAvailableSpace(decomInfo)).thenReturn(true);
+    when(mockNodeManager.hasAvailableSpace(fullInfo)).thenReturn(false);
+
+    RackCapacityPolicy policy = new RackCapacityPolicy(mockNodeManager, conf);
+    Map<Node, Long> capacities = policy.buildRackCapacities(topology);
+
+    Node rack0 = topology.getAncestor(healthyDn, 1);
+    Node rack1 = topology.getAncestor(decommissioningDn, 1);
+    assertEquals(90L, capacities.get(rack0));
+    assertNull(capacities.get(rack1));
+  }
+
+  @Test
+  public void testWeightedRandomRackRespectsLargeWeightRatios() {
+    Node smallRack = mock(Node.class);
+    Node largeRack = mock(Node.class);
+    List<Node> racks = Arrays.asList(smallRack, largeRack);
+    Map<Node, Long> rackCapacities = ImmutableMap.of(
+        smallRack, 1L,
+        largeRack, 1_000_000_000_000L);
+
+    RackCapacityPolicy policy = new RackCapacityPolicy(nodeManager, conf);
+    int smallRackSelections = 0;
+    for (int i = 0; i < 1000; i++) {
+      if (policy.pickWeightedRack(racks, rackCapacities) == smallRack) {
+        smallRackSelections++;
+      }
+    }
+    assertTrue(smallRackSelections < 50,
+        "Expected large rack to dominate selection, but small rack was chosen "
+            + smallRackSelections + " times");
+  }
+
+  private static class RackCapacityPolicy extends SCMCommonPlacementPolicy {
+    RackCapacityPolicy(NodeManager nodeManager, ConfigurationSource conf) {
+      super(nodeManager, conf);
+    }
+
+    @Override
+    public DatanodeDetails chooseNode(List<DatanodeDetails> healthyNodes) {
+      return healthyNodes.get(0);
+    }
+
+    Map<Node, Long> buildRackCapacities(NetworkTopology topology) {
+      return buildRackRemainingCapacityMap(topology);
+    }
+
+    Node pickWeightedRack(List<Node> racks, Map<Node, Long> rackCapacities) {
+      return weightedRandomRack(racks, rackCapacities);
+    }
   }
 
   private static class DummyPlacementPolicy extends SCMCommonPlacementPolicy {
